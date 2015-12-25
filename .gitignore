@@ -1,0 +1,9 @@
+release
+debug
+*.d
+*.o
+*.log
+other
+*.fifo
+ycm_extra_conf.py
+RayTracer
