@@ -1,293 +1,247 @@
-#include<CL/cl.h>
+#include"cl_ocgl.hpp"
 
-#include<stdio.h> 
-#include<stdlib.h>
+#include<iostream>
+#include<cstdlib>
+#include<fstream>
 
-//gcc -std=c99 openCLTest.c -o openCLTest -lOpenCL
+using namespace std;
 
 typedef struct event_queue_ event_queue;
 struct event_queue_
 {
-    cl_event this;
+    cl_event current;
     event_queue* next;
 };
 
+void OpenCGL::checkError(void)
+{
+  if(error!=CL_SUCCESS)
+  {
+    cout << "Failure: " << error << endl;
+    exit(1);
+  }
+}
 
-cl_uint platformIdCount = 0;
-cl_platform_id* platformIds;
-cl_uint deviceIdCount = 0;
-cl_device_id* deviceIds;
-
-cl_context context;
-
-cl_int error__;
-#define checkError(err) error__ = (err); if(error__!=CL_SUCCESS) { printf("Failure: %d\n", error__); exit(1); }
-
-void closeCL(void)
+OpenCGL::~OpenCGL(void)
 {
     clReleaseContext(context);
-    
-    free(deviceIds);
-    free(platformIds);
+    free(device_ids);
+    free(platform_ids);
 }
 
-char* readProgram(const char* fpath)
+bool load_file(string& name, string& content)
 {
-    FILE* file = fopen(fpath, "r");
-    if(file == NULL)
+    // We create the file object, saying I want to read it
+    fstream file(name.c_str(), fstream::in);
+
+    // We verify if the file was successfully opened
+    if(file.is_open())
     {
-        printf("File cannot be opened!\n");
-        return NULL;
+        // We use the standard getline function to read the file into
+        // a std::string, stoping only at "\0"
+        getline(file, content, '\0');
+
+        // We return the success of the operation
+        return !file.bad();
     }
-    
-    fseek(file, 0L, SEEK_END);
-    long size = ftell(file);
-    fseek(file, 0L, SEEK_SET);
-    
-    char* program = (char*)malloc((size_t)((int)sizeof(char)*size));
-    long offset = 0L;
-    
-    while(fgets(program+offset, 1000, file) != NULL)
-        offset = ftell(file);
-        
-    return program;
+
+    // The file was not successfully opened, so returning false
+    return false;
 }
 
-/*int main(void)
+void OpenCGL::_print_platform_info
+(
+    unsigned int platform,
+    cl_platform_info param,
+    string param_name
+)
 {
-    char* text = NULL;
-    text = readProgram("./kernelTest.cl");
-    printf("%s", text);
-    return 0;
-}*/
+  size_t size;
+  error = clGetPlatformInfo(
+    platform_ids[platform], param, 0, nullptr, &size);
+  checkError();
+  char* text = (char*)malloc(sizeof(char) * size);
+  error = clGetPlatformInfo(
+    platform_ids[platform], param, size, text, nullptr);
+  checkError();
+  cerr << param_name << ": " << text << endl;
+  free(text);
+}
 
-int setupCL(void)
+OpenCGL::OpenCGL(void)
 {
-    cl_int error;
     //platformCount, platformIDs
-    error = clGetPlatformIDs(0, NULL, &platformIdCount);
-    checkError(error);
-    platformIds = (cl_platform_id*)malloc(sizeof(cl_platform_id)*platformIdCount);
-    if(platformIds == NULL)
+    error = clGetPlatformIDs(0, nullptr, &platform_count);
+    checkError();
+    platform_ids = (cl_platform_id*)malloc(sizeof(cl_platform_id)*platform_count);
+    if(platform_ids == nullptr)
     {
-        printf("Memory allocation failed.\n");
+        cerr << "Memory allocation failed." << endl;
         exit(-1);
     }
-    error = clGetPlatformIDs(platformIdCount, platformIds, NULL);
-    checkError(error);
-    
-    for(size_t i=0; i<platformIdCount; i++)
+
+    error = clGetPlatformIDs(platform_count, platform_ids, nullptr);
+    checkError();
+
+    for(unsigned int i=0; i<platform_count; i++)
     {
-        printf("Platform: %d\n", (int)i);
-        size_t size;
-        char* text;
-        
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_PROFILE, 0, NULL, &size);
-        checkError(error);
-        text = (char*)malloc(sizeof(char) * size);
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_PROFILE, size, text, NULL);
-        checkError(error);
-        printf("%s\n", text);
-        free(text);
-        
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_VERSION, 0, NULL, &size);
-        checkError(error);
-        text = (char*)malloc(sizeof(char) * size);
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_VERSION, size, text, NULL);
-        checkError(error);
-        printf("%s\n", text);
-        free(text);
-        
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_NAME, 0, NULL, &size);
-        checkError(error);
-        text = (char*)malloc(sizeof(char) * size);
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_NAME, size, text, NULL);
-        checkError(error);
-        printf("%s\n", text);
-        free(text);
-        
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_VENDOR, 0, NULL, &size);
-        checkError(error);
-        text = (char*)malloc(sizeof(char) * size);
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_VENDOR, size, text, NULL);
-        checkError(error);
-        printf("%s\n", text);
-        free(text);
-        
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_EXTENSIONS, 0, NULL, &size);
-        checkError(error);
-        text = (char*)malloc(sizeof(char) * size);
-        error = clGetPlatformInfo(platformIds[i], CL_PLATFORM_EXTENSIONS, size, text, NULL);
-        checkError(error);
-        printf("%s\n", text);
-        free(text);
-        putchar('\n');
+        cerr << "Platform: " << i << endl;
+
+        print_platform_info(i, CL_PLATFORM_VERSION);
+        print_platform_info(i, CL_PLATFORM_NAME);
+        print_platform_info(i, CL_PLATFORM_VENDOR);
+        print_platform_info(i, CL_PLATFORM_EXTENSIONS);
     }
-    
+
     //deviceCount, deviceIDs
-    error = clGetDeviceIDs(platformIds[0], CL_DEVICE_TYPE_CPU, 0, NULL,
-        &deviceIdCount);
-    checkError(error);
-    deviceIds = (cl_device_id*)malloc(sizeof(cl_device_id)*deviceIdCount);
-    if(deviceIds == NULL)
+    error = clGetDeviceIDs(
+      platform_ids[0], CL_DEVICE_TYPE_CPU, 0, nullptr, &device_count);
+    checkError();
+    device_ids = (cl_device_id*)malloc(sizeof(cl_device_id)*device_count);
+    if(device_ids == nullptr)
     {
-        printf("Memory allocation failed.\n");
+        cerr << "Memory allocation failed." << endl;
         exit(-1);
-    }    
-    error = clGetDeviceIDs(platformIds[0], CL_DEVICE_TYPE_CPU, deviceIdCount,
-        deviceIds, NULL);
-    checkError(error);
-    
-    for(size_t i=0; i<deviceIdCount; i++)
+    }
+
+    error = clGetDeviceIDs(
+      platform_ids[0], CL_DEVICE_TYPE_CPU, device_count, device_ids, nullptr);
+    checkError();
+
+    for(unsigned int i=0; i<device_count; i++)
     {
-        printf("Device: %d\n", (int)i);
-        //size_t size;
-        //char* text;
+        cerr << "Device: " << i << endl;
         cl_device_type cdt;
-        
-        error = clGetDeviceInfo(deviceIds[i], CL_DEVICE_TYPE, sizeof(cl_device_type), &cdt, NULL);
-        checkError(error);
+
+        error = clGetDeviceInfo(
+            device_ids[i], CL_DEVICE_TYPE, sizeof(cl_device_type), &cdt, nullptr);
+        checkError();
         switch(cdt)
         {
-        case CL_DEVICE_TYPE_CPU:
-            printf("CPU\n");
-            break;
-        case CL_DEVICE_TYPE_GPU:
-            printf("GPU\n");
-            break;
-        case CL_DEVICE_TYPE_ACCELERATOR:
-            printf("ACCELERATOR\n");
-            break;
+        #define print_case(x) case x: cerr << #x << endl; break;
+        print_case(CL_DEVICE_TYPE_CPU)
+        print_case(CL_DEVICE_TYPE_GPU)
+        print_case(CL_DEVICE_TYPE_ACCELERATOR)
         default:
-            printf("WTF?!\n");
+            cerr << "WTF?!" << endl;
             break;
         }
-        putchar('\n');    
+        cerr << endl;
     }
-    
+
     //create context
     cl_context_properties contextProperties[] =
     {
-        CL_CONTEXT_PLATFORM,
-        (cl_context_properties)(platformIds[0]),
-        0, 0
+        CL_CONTEXT_PLATFORM, (cl_context_properties)(platform_ids[0]), 0, 0
     };
-    
+
     context = clCreateContext(
-        contextProperties, deviceIdCount,
-        deviceIds, NULL,
-        NULL, &error);
-    checkError(error);
-    
-    printf("OpenCL started\n");
-    return 0;
+        contextProperties, device_count,
+        device_ids, nullptr, nullptr, &error
+    );
+    checkError();
+
+    cerr << "OpenCL started" << endl;
 }
-    
-cl_mem allocateSpace(int byte_size, void* bytes)
+
+cl_mem OpenCGL::allocateSpace(size_t byte_size, void* bytes)
 {
-    cl_int error;
     cl_mem remoteBuffer = clCreateBuffer(context,
-        CL_MEM_READ_WRITE | (bytes != NULL ? CL_MEM_COPY_HOST_PTR : 0),
-        (size_t)byte_size, bytes, &error);
-    checkError(error);
+        CL_MEM_READ_WRITE | (bytes != nullptr ? CL_MEM_COPY_HOST_PTR : 0),
+        byte_size, bytes, &error);
+    checkError();
     return remoteBuffer;
 }
-    
-cl_kernel loadProgram(const char* fpath, const char* mainFunction)
+
+cl_kernel OpenCGL::loadProgram(string& fpath, string& mainFunction)
 {
-    cl_int error;
-    const char* kernel_string = readProgram(fpath);
-    cl_program program = clCreateProgramWithSource(context, 1, 
-        (const char**) &kernel_string, NULL, &error);
-    checkError(error);
-    
+    string kernel_string;
+    if(!load_file(fpath, kernel_string))
+    {
+      cerr << "Could not read file " << fpath << endl;
+      exit(1); // TODO
+    }
+    char const* kernel_string_ptr = kernel_string.c_str();
+    cl_program program = clCreateProgramWithSource(context, 1,
+        &kernel_string_ptr, nullptr, &error);
+    checkError();
+
     //build
-    error = clBuildProgram (program, deviceIdCount,
-        deviceIds, NULL, NULL, NULL);
+    error = clBuildProgram(program, device_count, device_ids, nullptr, nullptr, nullptr);
     //checkError(error);
 
     if(error == CL_BUILD_PROGRAM_FAILURE)
     {
         // Determine the size of the log
         size_t log_size;
-        clGetProgramBuildInfo(program, deviceIds[0], CL_PROGRAM_BUILD_LOG, 0, NULL, &log_size);
+        clGetProgramBuildInfo(program, device_ids[0], CL_PROGRAM_BUILD_LOG, 0, nullptr, &log_size);
         // Allocate memory for the log
-        char *log = (char *)malloc(log_size);
+        char* log = (char*)malloc(log_size*sizeof(char));
         // Get the log
-        clGetProgramBuildInfo(program, deviceIds[0], CL_PROGRAM_BUILD_LOG, log_size, log, NULL);
+        clGetProgramBuildInfo(program, device_ids[0], CL_PROGRAM_BUILD_LOG, log_size, log, nullptr);
         // Print the log
-        printf("Error while building program '%s':\n%s\n", fpath, log); 
-        exit(-1);
+        cerr << "Error while building program " << fpath << endl << log << endl;
+        exit(1);
     }
-    
+
     //create kernel
-    cl_kernel kernel = clCreateKernel(program, mainFunction, &error);
-    checkError(error);
-    
+    cl_kernel kernel = clCreateKernel(program, mainFunction.c_str(), &error);
+    checkError();
+
     return kernel;
 }
 
-void waitForEvent(cl_event e)
+void OpenCGL::waitForEvent(cl_event& e)
 {
-    cl_int error;
     error = clWaitForEvents(1, &e);
-    checkError(error);
+    checkError();
 }
 
-cl_int getEventStatus(cl_event e)
+cl_int OpenCGL::getEventStatus(cl_event& e)
 {
     cl_int stat;
-    cl_int error;
     error = clGetEventInfo(e, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(cl_int), &stat, NULL);
-    checkError(error);
-    return(stat);
+    checkError();
+    return stat;
 }
 
-void setArgument(cl_kernel kernel, int nr, int arg_size, void* arg)
+void OpenCGL::setArgument(cl_kernel& kernel, int nr, int arg_size, void* arg)
 {
-    cl_int error = clSetKernelArg(kernel, (cl_uint)nr, (size_t)arg_size, arg);
-    checkError(error);
+    error = clSetKernelArg(kernel, (cl_uint)nr, (size_t)arg_size, arg);
+    checkError();
 }
-    
-cl_command_queue createCommandQueue(void)
+
+cl_command_queue OpenCGL::createCommandQueue(void)
 {
-    cl_int error;
-    cl_command_queue queue = clCreateCommandQueue(context, deviceIds[0],
-        0, &error);
-    checkError(error);
+    cl_command_queue queue = clCreateCommandQueue(context, device_ids[0], 0, &error);
+    checkError();
     return queue;
 }
 
-cl_event enqueueKernelInQueue(int width, cl_kernel kernel, cl_command_queue queue)
+cl_event OpenCGL::enqueueKernelInQueue(size_t width, cl_kernel& kernel, cl_command_queue& queue)
 {
-    cl_int error;
-    const size_t workSize[] = { (size_t)width, 0, 0 };
+    const size_t workSize[] = { width, 0, 0 };
     cl_event event;
     error = clEnqueueNDRangeKernel(queue, kernel,
         1, // One dimension, because workSize has dimension one
-        NULL,
+        nullptr,
         workSize,
-        NULL,
-        0, NULL, &event);
-    checkError(error);
-    return event;   
-}
-    
-void readBufferBlocking(cl_command_queue queue, cl_mem remoteBuf, int bytes, void* localBuf)
-{
-    cl_int error;
-    error = clEnqueueReadBuffer(queue, remoteBuf, CL_TRUE, 0, 
-        (size_t)bytes, localBuf, 0, NULL, NULL);
-    checkError(error);
+        nullptr,
+        0, nullptr, &event);
+    checkError();
+    return event;
 }
 
-
-void writeBufferBlocking(cl_command_queue queue, cl_mem buffer, int bytes, void* data)
+void OpenCGL::writeBufferBlocking(cl_command_queue& queue, cl_mem buffer, size_t bytes, void* data)
 {
-    cl_int error;
     error = clEnqueueWriteBuffer(queue, buffer, CL_TRUE,
-        0, (size_t)bytes, data, 0, NULL, NULL);
-    checkError(error);	
+        0, bytes, data, 0, nullptr, nullptr);
+    checkError();
 }
 
-
+void OpenCGL::readBufferBlocking(cl_command_queue& queue, cl_mem remoteBuf, size_t bytes, void* localBuf)
+{
+  error = clEnqueueReadBuffer(queue, remoteBuf, CL_TRUE, 0,
+    bytes, localBuf, 0, nullptr, nullptr);
+  checkError();
+}

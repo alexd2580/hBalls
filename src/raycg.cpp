@@ -1,21 +1,27 @@
-#include"raycg.h"
-#include<stdio.h>
-#include<stdlib.h>
-#include<string.h>
-#include<math.h>
+#include<iostream>
+#include<cstdlib>
+#include<cstring>
+#include<cmath>
+#include<string>
+#include<stack>
 
 #include<CL/cl.h>
-#include"cl_ocgl.h"
 
 #define __USE_BSD	//to get usleep
 #include <unistd.h>
 
+#include"raycg.hpp"
+#include"cl_ocgl.hpp"
+
+using namespace std;
+
+#define MAX_PRIMITIVES 1000
 
 /* SCREEN SIZES */
-int size_x;     //
-int size_y;     //
+unsigned int size_w;     //
+unsigned int size_h;     //
                 //
-int view_min_x; //
+int view_min_x; // ??
 int view_max_x; //
 int view_min_y; //
 int view_max_y; //
@@ -25,78 +31,65 @@ int view_max_y; //
  * The main local buffer
  * frameBuffer -> a buffer for the next frame colors
  */
-uint8_t* frameBuffer;
-uint8_t* objectsBuffer;
-int* offsetsBuffer;
+uint8_t*  frame_buffer;
+uint8_t*  objects_buffer;
+int*      offsets_buffer;
 
 void clearBuffers(void)
 {
     //for(int i=0; i<size_y*size_x; i++)
     //    frameBuffer[i] = ' '; i don't need to clear framebuf, cleared on rewrite
     for(int i=0; i<1000; i++)
-        offsetsBuffer[i] = -1;
+        offsets_buffer[i] = -1;
 }
-
-/**
- * Matrix4_stack
- */
-typedef struct mat4_s_ mat4_s;
-struct mat4_s_
-{
-    mat4_s* next;
-    mat4 top;
-};
 
 /**
  * Matrix stack for model matrix
  */
-mat4_s* model_s;
+stack<glm::mat4> model_s;
 
 /**
  * Pop a model matrix
  */
-void popMatrix(void)
+void pop_matrix(void)
 {
-    mat4_s* last = model_s;
-    model_s = model_s->next;
-    free(last);
+    model_s.pop();
+}
+
+/**
+ * Overwrites the current active top-stack matrix
+ */
+void put_matrix(glm::mat4& mat)
+{
+    model_s.top() = mat;
 }
 
 /**
  * Push a matrix, copy the old one to the current one
  * If there was no matrix on the stack, then set it to I
  */
-void pushMatrix(void)
+void push_matrix(void)
 {
-    mat4_s* last = model_s;
-    model_s = (mat4_s*)malloc(sizeof(mat4_s));
-    model_s->next = last;
-
-    if(model_s->next == NULL)
-        setIdentity4(&(model_s->top));
+    if(model_s.size() == 0)
+      model_s.push(glm::mat4(1.0));
     else
-        model_s->top = model_s->next->top;
+    {
+      glm::mat4 last = model_s.top();
+      model_s.push(last);
+    }
 }
 
-void loadIdentity(void)
+void load_identity(void) // TODO find a better implementation
 {
-    setIdentity4(&(model_s->top));
-}
-
-/**
- * Returnc a copy of the current active top-stack matrix
- */
-mat4 getMatrix(void)
-{
-    return model_s->top;
+  put_matrix(glm::mat4(1.0))
 }
 
 /**
- * Overwrites the current active top-stack matrix
+ * Returns a copy of the current active top-stack matrix
  */
-void putMatrix(mat4 mat)
+glm::mat4 get_matrix(void)
 {
-    model_s->top = mat;
+    return model_s.top();
 }
 
 
@@ -118,7 +111,7 @@ cl_kernel bufferCleaner;
 typedef struct interleave_ interleave;
 struct interleave_
 {
-    vec3 pos;
+    glm::vec3 pos;
     float color;
 };
 
@@ -144,35 +137,36 @@ void clearRemoteBuffers(void)
 
 void printInfo(void)
 {
-    printf("OpenCGL info - current state:\n");
-    printf("Size: %dx%d\n", size_x, size_y);
-    printf("Viewport: x:%d->%d, y:%d->%d\n", view_min_x, view_max_x, view_min_y, view_max_y);
-    printf("\n");
+    cout << "OpenCGL info - current state:" << endl;
+    cout << "Size: w=" << size_w << " h=" << size_h << endl;
+    cout << "Viewport: x=" << view_min_x << "->" << view_max_x << " ";
+    cout << "y=" << view_min_y << "->" << view_max_y << endl;
+    cout << endl;
 }
 
-void setup(int x, int y, const char* tracepath)
+void setup(unsigned int w, unsigned int h, string& tracepath)
 {
-    size_x = x;
-    size_y = y;
+    size_w = w;
+    size_h = h;
 
-    view_min_x = -size_x/2;
-    view_max_x = size_x/2;
-    view_min_y = -size_y/2;
-    view_max_y = size_y/2;
-    
-    frameBuffer = (uint8_t*)malloc((size_t)(size_y*size_x*(int)sizeof(uint8_t)));
-    objectsBuffer = (uint8_t*)malloc(1000*20*FLOAT_SIZE);
-    offsetsBuffer = (int*)malloc(1000*INT_SIZE);
-    
+    view_min_x = -size_w/2;
+    view_max_x = size_w/2;
+    view_min_y = -size_h/2;
+    view_max_y = size_h/2;
+
+    frame_buffer  = (uint8_t*)  malloc(size_h*size_w*sizeof(uint8_t));
+    objects_buffer = (uint8_t*) malloc(1000*20*FLOAT_SIZE);
+    offsets_buffer = (int*)     malloc(1000*INT_SIZE);
+
     setupCL();
-    
+
     framebufferqueue = createCommandQueue();
 
     fov_mem = allocateSpace(16*FLOAT_SIZE, NULL);
     objects_mem = allocateSpace(1000*20*FLOAT_SIZE, NULL);
     offsets_mem = allocateSpace(1000*INT_SIZE, NULL);
     frameBuf_mem = allocateSpace(size_y*size_x*(int)sizeof(uint8_t), NULL);
-    depthBuf_mem = allocateSpace(size_x*size_y*FLOAT_SIZE, NULL);    
+    depthBuf_mem = allocateSpace(size_x*size_y*FLOAT_SIZE, NULL);
 
     bufferCleaner = loadProgram("./clearBuffers.cl", "clearBuffers");
     raytracer = loadProgram(tracepath, "trace");
@@ -186,7 +180,7 @@ void setPerspective(float fov, float* camPos)
 {
 /*
 fov should be an array of floats:
-fovy, aspect, 
+fovy, aspect,
 posx, posy, posz,
 dirx, diry, dirz,
 upx, upy, upz,
@@ -196,7 +190,7 @@ size_x, size_y <-- IT'S TWO INTS!!
     float dataCpy[16];
     dataCpy[0] = fov;
     dataCpy[1] = (float)size_x/(float)size_y;
-    memcpy(dataCpy+2, camPos, 3*FLOAT_SIZE); //pos 
+    memcpy(dataCpy+2, camPos, 3*FLOAT_SIZE); //pos
     vec3 dir = (vec3){ camPos[3], camPos[4], camPos[5] };
     vec3 up = (vec3){ camPos[6], camPos[7], camPos[8] };
     vec3 left = crossProd(&up, &dir);
@@ -204,7 +198,7 @@ size_x, size_y <-- IT'S TWO INTS!!
     normalize(&dir);
     normalize(&up);
     normalize(&left);
-    
+
     dataCpy[5] = dir.x;
     dataCpy[6] = dir.y;
     dataCpy[7] = dir.z;
@@ -214,7 +208,7 @@ size_x, size_y <-- IT'S TWO INTS!!
     dataCpy[11] = left.x;
     dataCpy[12] = left.y;
     dataCpy[13] = left.z;
-    
+
     int* data_i = (int*)(dataCpy+14);
     data_i[0] = size_x;
     data_i[1] = size_y;
@@ -243,8 +237,7 @@ int freeOffset_r = 0;
 
 void flushRTBuffer(void)
 {
-    printf("Flushing object buffer...\n");
-    fflush(stdout);
+    cout << "Flushing object buffer..." << endl;
     writeBufferBlocking(framebufferqueue, objects_mem, 1000*20*FLOAT_SIZE, objectsBuffer);
     writeBufferBlocking(framebufferqueue, offsets_mem, 1000*INT_SIZE, offsetsBuffer);
 
@@ -254,11 +247,11 @@ void flushRTBuffer(void)
     setArgument(raytracer, 4, MEM_SIZE, &frameBuf_mem);
     setArgument(raytracer, 5, MEM_SIZE, &depthBuf_mem);
     setArgument(raytracer, 6, MEM_SIZE, 0);
-    
+
     cl_event eventList[size_y];
     cl_mem id_mem;
     int idi;
-    
+
     for(int i=0; i<size_y; i++)
     {
         idi = i*size_x;
@@ -266,19 +259,19 @@ void flushRTBuffer(void)
         setArgument(raytracer, 0, MEM_SIZE, &id_mem);
         eventList[i] = enqueueKernelInQueue(size_x, raytracer, framebufferqueue);
     }
-    
+
     cl_int status;
     int queue_size = size_y;
     int total = size_y;
     int finished = 0;
     int running = 0;
     int queued = 0;
-    
+
     while(finished != total)
     {
         running = 0;
         queued = 0;
-    
+
         for(int i=0; i<queue_size; i++)
         {
             status = getEventStatus(eventList[i]);
@@ -295,38 +288,34 @@ void flushRTBuffer(void)
                 break;
             default:
                 queued++;
-                break;            
-            }            
+                break;
+            }
         }
-            
-        printf("\x1b[1A\r");
-        printf("                         \r %d / %d queued...\n", queued, size_y);
+
+        cout << "\x1b[1A\r";
+        cout << "                         \r" << queued << " / " << size_h << endl;
         //printf("                         \r %d / %d running...\n", running, size_y);
-        printf("                         \r %d / %d finished...", finished, size_y);
-        fflush(stdout);
-        
+        cout << "                         \r" << finished << " / " << size_h << " ...";
+
         usleep(10000);
     }
-    putchar('\n');
-    
+    cout << endl;
+
     clearBuffers(); //object-queue
     queuePos_r = 0;
     freeOffset_r = 0;
 }
 
-#include"pngwrapper.h"
+#include"pngwrapper.hpp"
 
 void printScreen(const char* fpath)
 {
     flushRTBuffer();
-    printf("Reading buffer\n");
-    fflush(stdout);
-    readBufferBlocking(framebufferqueue, frameBuf_mem, size_y*size_x*(int)sizeof(uint8_t), frameBuffer);
-    printf("Saving to file\n");
-    fflush(stdout);
+    cout << "Reading buffer" << endl;
+    readBufferBlocking(framebufferqueue, frameBuf_mem, size_w*size_h*sizeof(uint8_t), frameBuffer);
+    cout << "Saving to file" << endl;
     saveBWToFile(frameBuffer, size_x, size_y, fpath);
-    printf("Done\n");
-    fflush(stdout);
+    cout << "Done" << endl;
 }
 
 void rotatev(float a, vec3 rotv)
@@ -337,9 +326,9 @@ void rotatev(float a, vec3 rotv)
     mat4 rotm;
     float ca = (float)cos(a);
     float sa = (float)sin(a);
-    
-    rotm.x = (vec4){ 
-        x*x*(1-ca)+ca, 
+
+    rotm.x = (vec4){
+        x*x*(1-ca)+ca,
         x*y*(1-ca)-z*sa,
         x*z*(1-ca)+y*sa,
         0.0f };
@@ -354,7 +343,7 @@ void rotatev(float a, vec3 rotv)
         z*z*(1-ca)+ca,
         0.0f };
     rotm.w = (vec4){ 0.0f, 0.0f, 0.0f, 1.0f };
-    
+
     matMultMat4(&active_m, &rotm, &(model_s->top));
 }
 
@@ -376,7 +365,7 @@ void translatef(float x, float y, float z)
     transm.y = (vec4){ 0.0f, 1.0f, 0.0f, y };
     transm.z = (vec4){ 0.0f, 0.0f, 1.0f, z };
     transm.w = (vec4){ 0.0f, 0.0f, 0.0f, 1.0f };
-    
+
     matMultMat4(&active_m, &transm, &(model_s->top));
 }
 
@@ -423,7 +412,7 @@ struct object_
 /**
  * Copies the polygon to the queue, moving the queue*
  * While doing so, decomposes the internal linked list.
- */ 
+ */
 
 uint8_t* addPolygon(void* queue_v, polygonN* pol)
 {
@@ -432,17 +421,17 @@ uint8_t* addPolygon(void* queue_v, polygonN* pol)
     queue_u++;
     float* queue_f = (float*)queue_u;
     vertex_t* tmp;
-    
+
     for(int i=0; i<pol->n; i++)
     {
         tmp = pol->vertices;
         pol->vertices = pol->vertices->next;
-        
+
         queue_f[0] = tmp->pos.x;
         queue_f[1] = tmp->pos.y;
         queue_f[2] = tmp->pos.z;
         queue_f += 3;
-        
+
         free(tmp);
     }
     return (uint8_t*)queue_f;
@@ -473,14 +462,14 @@ void addToRayTraceQueue(object* data)
 {
     offsetsBuffer[queuePos_r] = freeOffset_r;
     uint8_t* thisObj_u = objectsBuffer+freeOffset_r;
-    thisObj_u[0] = data->type;    
+    thisObj_u[0] = data->type;
     thisObj_u[1] = data->material;
     thisObj_u[2] = data->color;
     thisObj_u += 3;
-    
+
     float* thisObj_f;
     sphere* s;
-    
+
     switch(data->type)
     {
     case POLYGON:
@@ -515,11 +504,11 @@ vertex_t** c_newVertex;
 void begin(uint8_t mode)
 {
     c_renderMode = mode;
-    
+
     c_object.type = mode;
     c_object.material = c_material;
     c_object.color = c_color;
-    
+
     switch(mode)
     {
     case POLYGON:
@@ -580,8 +569,6 @@ void end(void)
         flushRTBuffer();
     if(queuePos_r >= 1000)
         flushRTBuffer();
-        
+
     addToRayTraceQueue(&c_object);
 }
-
-
