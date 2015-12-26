@@ -4,8 +4,9 @@
 #include<cmath>
 #include<string>
 #include<stack>
-
-#include<CL/cl.h>
+#include<vector>
+#include<glm/glm.hpp>
+#include<glm/gtc/matrix_access.hpp>
 
 #define __USE_BSD	//to get usleep
 #include <unistd.h>
@@ -18,35 +19,47 @@ using namespace std;
 #define MAX_PRIMITIVES 1000
 
 /* SCREEN SIZES */
-unsigned int size_w;     //
-unsigned int size_h;     //
-                //
-int view_min_x; // ??
-int view_max_x; //
-int view_min_y; //
-int view_max_y; //
+unsigned int size_w;
+unsigned int size_h;
+
+int view_min_x;
+int view_max_x;
+int view_min_y;
+int view_max_y;
 /* SCREEN SIZES */
 
 /**
- * The main local buffer
- * frameBuffer -> a buffer for the next frame colors
+ * Local Buffers
  */
-uint8_t*  frame_buffer;
-uint8_t*  objects_buffer;
-int*      offsets_buffer;
+uint8_t*        frame_buffer;
+uint8_t*        objects_buffer;
+unsigned int*   offsets_buffer;
+bool            buffer_full;
 
-void clearBuffers(void)
-{
-    //for(int i=0; i<size_y*size_x; i++)
-    //    frameBuffer[i] = ' '; i don't need to clear framebuf, cleared on rewrite
-    for(int i=0; i<1000; i++)
-        offsets_buffer[i] = -1;
-}
+unsigned int  queuePos_r;
+unsigned int  freeOffset_r;
+
+/**
+ * Buffers on GPU
+ */
+cl_mem /*float*/ fov_mem;
+cl_mem /*char */ objects_mem;
+cl_mem /*int  */ offsets_mem;
+cl_mem /*char */ frameBuf_mem;
+cl_mem /*float*/ depthBuf_mem;
 
 /**
  * Matrix stack for model matrix
  */
 stack<glm::mat4> model_s;
+
+void clearBuffers(void)
+{
+  //for(int i=0; i<size_y*size_x; i++)
+  //    frameBuffer[i] = ' '; i don't need to clear framebuf, cleared on rewrite
+  for(int i=0; i<1000; i++)
+  offsets_buffer[i] = -1;
+}
 
 /**
  * Pop a model matrix
@@ -81,7 +94,8 @@ void push_matrix(void)
 
 void load_identity(void) // TODO find a better implementation
 {
-  put_matrix(glm::mat4(1.0))
+  glm::mat4 mat(1.0);
+  put_matrix(mat);
 }
 
 /**
@@ -91,12 +105,6 @@ glm::mat4 get_matrix(void)
 {
     return model_s.top();
 }
-
-
-cl_command_queue framebufferqueue;
-
-cl_kernel raytracer;
-cl_kernel bufferCleaner;
 
 /**
  * Data structure used in vertex buffers.
@@ -115,65 +123,63 @@ struct interleave_
     float color;
 };
 
-/**
- * Buffers on GPU
- */
-
-cl_mem /*float*/ fov_mem;
-cl_mem /*char */ objects_mem;
-cl_mem /*int  */ offsets_mem;
-cl_mem /*char */ frameBuf_mem;
-cl_mem /*float*/ depthBuf_mem;
-
-void clearRemoteBuffers(void)
-{
-    setArgument(bufferCleaner, 0, MEM_SIZE, &offsets_mem);
-    setArgument(bufferCleaner, 1, MEM_SIZE, &frameBuf_mem);
-    setArgument(bufferCleaner, 2, MEM_SIZE, &depthBuf_mem);
-
-    enqueueKernelInQueue(size_x*size_y, bufferCleaner, framebufferqueue);
-}
-
-
 void printInfo(void)
 {
-    cout << "OpenCGL info - current state:" << endl;
-    cout << "Size: w=" << size_w << " h=" << size_h << endl;
-    cout << "Viewport: x=" << view_min_x << "->" << view_max_x << " ";
-    cout << "y=" << view_min_y << "->" << view_max_y << endl;
-    cout << endl;
+  cout << "OpenCGL info - current state:" << endl;
+  cout << "Size: w=" << size_w << " h=" << size_h << endl;
+  cout << "Viewport: x=" << view_min_x << "->" << view_max_x << " ";
+  cout << "y=" << view_min_y << "->" << view_max_y << endl;
+  cout << endl;
 }
 
-void setup(unsigned int w, unsigned int h, string& tracepath)
+cl_command_queue framebufferqueue;
+
+cl_kernel raytracer;
+cl_kernel bufferCleaner;
+
+void clearRemoteBuffers(OpenCL& cl)
+{
+    cl.setArgument(bufferCleaner, 0, MEM_SIZE, &offsets_mem);
+    cl.setArgument(bufferCleaner, 1, MEM_SIZE, &frameBuf_mem);
+    cl.setArgument(bufferCleaner, 2, MEM_SIZE, &depthBuf_mem);
+
+    cl.enqueue_kernel(size_w*size_h, bufferCleaner, framebufferqueue);
+}
+
+void setup(unsigned int w, unsigned int h, string& tracepath, OpenCL& cl)
 {
     size_w = w;
     size_h = h;
 
-    view_min_x = -size_w/2;
+    view_min_x = -((int)size_w/2);
     view_max_x = size_w/2;
-    view_min_y = -size_h/2;
+    view_min_y = -((int)size_h/2);
     view_max_y = size_h/2;
 
-    frame_buffer  = (uint8_t*)  malloc(size_h*size_w*sizeof(uint8_t));
-    objects_buffer = (uint8_t*) malloc(1000*20*FLOAT_SIZE);
-    offsets_buffer = (int*)     malloc(1000*INT_SIZE);
+    frame_buffer  = (uint8_t*)        malloc(size_h*size_w*sizeof(uint8_t));
+    objects_buffer = (uint8_t*)       malloc(MAX_PRIMITIVES*20*FLOAT_SIZE);
+    offsets_buffer = (unsigned int*)  malloc(MAX_PRIMITIVES*INT_SIZE);
 
-    setupCL();
+    queuePos_r = 0;
+    freeOffset_r = 0;
 
-    framebufferqueue = createCommandQueue();
+    frameBuf_mem = cl.allocate_space(size_h*size_w*(int)sizeof(uint8_t), nullptr);
+    fov_mem = cl.allocate_space(16*FLOAT_SIZE, nullptr);
+    objects_mem = cl.allocate_space(MAX_PRIMITIVES*20*FLOAT_SIZE, nullptr);
+    offsets_mem = cl.allocate_space(MAX_PRIMITIVES*INT_SIZE, nullptr);
+    depthBuf_mem = cl.allocate_space(size_w*size_h*FLOAT_SIZE, nullptr);
 
-    fov_mem = allocateSpace(16*FLOAT_SIZE, NULL);
-    objects_mem = allocateSpace(1000*20*FLOAT_SIZE, NULL);
-    offsets_mem = allocateSpace(1000*INT_SIZE, NULL);
-    frameBuf_mem = allocateSpace(size_y*size_x*(int)sizeof(uint8_t), NULL);
-    depthBuf_mem = allocateSpace(size_x*size_y*FLOAT_SIZE, NULL);
+    framebufferqueue = cl.createCommandQueue();
 
-    bufferCleaner = loadProgram("./clearBuffers.cl", "clearBuffers");
-    raytracer = loadProgram(tracepath, "trace");
+    string clearBufferKernel("./cl/clearBuffers.cl");
+    string clearBufferMain("clearBuffers");
+    bufferCleaner = cl.load_program(clearBufferKernel, clearBufferMain);
+    string tracerMain("trace");
+    raytracer = cl.load_program(tracepath, tracerMain);
 
-    pushMatrix();
+    push_matrix();
     clearBuffers();
-    clearRemoteBuffers();
+    clearRemoteBuffers(cl);
 }
 
 void setPerspective(float fov, float* camPos)
@@ -189,15 +195,15 @@ size_x, size_y <-- IT'S TWO INTS!!
 */
     float dataCpy[16];
     dataCpy[0] = fov;
-    dataCpy[1] = (float)size_x/(float)size_y;
+    dataCpy[1] = (float)size_w/(float)size_h;
     memcpy(dataCpy+2, camPos, 3*FLOAT_SIZE); //pos
-    vec3 dir = (vec3){ camPos[3], camPos[4], camPos[5] };
-    vec3 up = (vec3){ camPos[6], camPos[7], camPos[8] };
-    vec3 left = crossProd(&up, &dir);
-    up = crossProd(&dir, &left);
-    normalize(&dir);
-    normalize(&up);
-    normalize(&left);
+    glm::vec3 dir(camPos[3], camPos[4], camPos[5]);
+    glm::vec3 up(camPos[6], camPos[7], camPos[8]);
+    glm::vec3 left = glm::cross(up, dir);
+    up = cross(dir, left);
+    normalize(dir);
+    normalize(up);
+    normalize(left);
 
     dataCpy[5] = dir.x;
     dataCpy[6] = dir.y;
@@ -210,73 +216,58 @@ size_x, size_y <-- IT'S TWO INTS!!
     dataCpy[13] = left.z;
 
     int* data_i = (int*)(dataCpy+14);
-    data_i[0] = size_x;
-    data_i[1] = size_y;
-    writeBufferBlocking(framebufferqueue, fov_mem, 14*FLOAT_SIZE+2*INT_SIZE, dataCpy);
+    data_i[0] = size_w;
+    data_i[1] = size_h;
+    OpenCL::writeBufferBlocking(framebufferqueue, fov_mem, 14*FLOAT_SIZE+2*INT_SIZE, dataCpy);
 }
 
-void freeStack(mat4_s* s)
-{
-    mat4_s* t;
-    while(s != NULL)
-    {
-        t = s;
-        s = s->next;
-        free(t);
-    }
-}
-
-void teardown(void)
-{
-    closeCL();
-    freeStack(model_s);
-}
-
-int queuePos_r = 0;
-int freeOffset_r = 0;
-
-void flushRTBuffer(void)
+void flushRTBuffer(OpenCL& cl)
 {
     cout << "Flushing object buffer..." << endl;
-    writeBufferBlocking(framebufferqueue, objects_mem, 1000*20*FLOAT_SIZE, objectsBuffer);
-    writeBufferBlocking(framebufferqueue, offsets_mem, 1000*INT_SIZE, offsetsBuffer);
+    OpenCL::writeBufferBlocking(framebufferqueue,
+      objects_mem, MAX_PRIMITIVES*20*FLOAT_SIZE, objects_buffer);
+    OpenCL::writeBufferBlocking(framebufferqueue,
+      offsets_mem, MAX_PRIMITIVES*INT_SIZE, offsets_buffer);
 
-    setArgument(raytracer, 1, MEM_SIZE, &fov_mem);
-    setArgument(raytracer, 2, MEM_SIZE, &objects_mem);
-    setArgument(raytracer, 3, MEM_SIZE, &offsets_mem);
-    setArgument(raytracer, 4, MEM_SIZE, &frameBuf_mem);
-    setArgument(raytracer, 5, MEM_SIZE, &depthBuf_mem);
-    setArgument(raytracer, 6, MEM_SIZE, 0);
+    OpenCL::setArgument(raytracer, 1, MEM_SIZE, &fov_mem);
+    OpenCL::setArgument(raytracer, 2, MEM_SIZE, &objects_mem);
+    OpenCL::setArgument(raytracer, 3, MEM_SIZE, &offsets_mem);
+    OpenCL::setArgument(raytracer, 4, MEM_SIZE, &frameBuf_mem);
+    OpenCL::setArgument(raytracer, 5, MEM_SIZE, &depthBuf_mem);
+    OpenCL::setArgument(raytracer, 6, MEM_SIZE, 0);
 
-    cl_event eventList[size_y];
+    cl_event* eventList = new cl_event[size_h];
     cl_mem id_mem;
     int idi;
 
-    for(int i=0; i<size_y; i++)
+    for(unsigned int i=0; i<size_h; i++)
     {
-        idi = i*size_x;
-        id_mem = allocateSpace(INT_SIZE, &idi);
-        setArgument(raytracer, 0, MEM_SIZE, &id_mem);
-        eventList[i] = enqueueKernelInQueue(size_x, raytracer, framebufferqueue);
+        idi = i*size_w;
+        id_mem = cl.allocate_space(INT_SIZE, &idi);
+        OpenCL::setArgument(raytracer, 0, MEM_SIZE, &id_mem);
+        eventList[i] = OpenCL::enqueue_kernel(size_w, raytracer, framebufferqueue);
     }
 
     cl_int status;
-    int queue_size = size_y;
-    int total = size_y;
-    int finished = 0;
-    int running = 0;
-    int queued = 0;
+    unsigned int queue_size = size_h;
+    unsigned int total = size_h;
+    unsigned int finished = 0;
+    unsigned int running = 0;
+    unsigned int queued = 0;
 
     while(finished != total)
     {
         running = 0;
         queued = 0;
 
-        for(int i=0; i<queue_size; i++)
+        for(unsigned int i=0; i<queue_size; i++)
         {
-            status = getEventStatus(eventList[i]);
+            status = OpenCL::getEventStatus(eventList[i]);
             switch(status)
             {
+            //case CL_QUEUED:
+            //case CL_SUBMITTED:
+                break;
             case CL_RUNNING:
                 running++;
                 break;
@@ -287,19 +278,22 @@ void flushRTBuffer(void)
                 i--;
                 break;
             default:
-                queued++;
                 break;
             }
         }
 
-        cout << "\x1b[1A\r";
-        cout << "                         \r" << queued << " / " << size_h << endl;
+        cerr << "\x1b[1A\r";
+        cerr << "                              \r"
+             << "Queued:   " << queued << " / " << size_h << endl;
         //printf("                         \r %d / %d running...\n", running, size_y);
-        cout << "                         \r" << finished << " / " << size_h << " ...";
+        cerr << "                              \r"
+             << "Finished: " << finished << " / " << size_h << " ...";
 
         usleep(10000);
     }
     cout << endl;
+
+    delete[] eventList;
 
     clearBuffers(); //object-queue
     queuePos_r = 0;
@@ -308,198 +302,176 @@ void flushRTBuffer(void)
 
 #include"pngwrapper.hpp"
 
-void printScreen(const char* fpath)
+void printScreen(string& fpath, OpenCL& cl)
 {
-    flushRTBuffer();
+    flushRTBuffer(cl);
     cout << "Reading buffer" << endl;
-    readBufferBlocking(framebufferqueue, frameBuf_mem, size_w*size_h*sizeof(uint8_t), frameBuffer);
+    OpenCL::readBufferBlocking(framebufferqueue,
+      frameBuf_mem, size_w*size_h*sizeof(uint8_t), frame_buffer);
     cout << "Saving to file" << endl;
-    saveBWToFile(frameBuffer, size_x, size_y, fpath);
+    saveBWToFile(frame_buffer, size_w, size_h, fpath);
     cout << "Done" << endl;
-}
-
-void rotatev(float a, vec3 rotv)
-{
-    normalize(&rotv);
-    float x=rotv.x, y=rotv.y, z=rotv.z;
-    mat4 active_m = model_s->top;
-    mat4 rotm;
-    float ca = (float)cos(a);
-    float sa = (float)sin(a);
-
-    rotm.x = (vec4){
-        x*x*(1-ca)+ca,
-        x*y*(1-ca)-z*sa,
-        x*z*(1-ca)+y*sa,
-        0.0f };
-    rotm.y = (vec4){
-        y*x*(1-ca)+z*sa,
-        y*y*(1-ca)+ca,
-        y*z*(1-ca)-x*sa,
-        0.0f };
-    rotm.z = (vec4){
-        z*x*(1-ca)-y*sa,
-        z*y*(1-ca)+x*sa,
-        z*z*(1-ca)+ca,
-        0.0f };
-    rotm.w = (vec4){ 0.0f, 0.0f, 0.0f, 1.0f };
-
-    matMultMat4(&active_m, &rotm, &(model_s->top));
-}
-
-void translatev(vec3 dirv)
-{
-    translatef(dirv.x, dirv.y, dirv.z);
 }
 
 void rotatef(float angle, float x, float y, float z)
 {
-    rotatev(angle, (vec3){ x, y, z });
+    float len = sqrt(x*x+y*y+z*z);
+    x /= len;
+    y /= len;
+    z /= len;
+
+    glm::mat4& active_m = model_s.top();
+    glm::mat4 rotm;
+    float ca = (float)cos(angle);
+    float sa = (float)sin(angle);
+
+    glm::row(rotm, 0, glm::vec4(
+        x*x*(1-ca)+ca,
+        x*y*(1-ca)-z*sa,
+        x*z*(1-ca)+y*sa,
+        0.0f));
+    glm::row(rotm, 1, glm::vec4(
+        y*x*(1-ca)+z*sa,
+        y*y*(1-ca)+ca,
+        y*z*(1-ca)-x*sa,
+        0.0f));
+    glm::row(rotm, 2, glm::vec4(
+        z*x*(1-ca)-y*sa,
+        z*y*(1-ca)+x*sa,
+        z*z*(1-ca)+ca,
+        0.0f));
+    glm::row(rotm, 3, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+
+    active_m *= rotm;
+}
+
+void rotatev(float angle, glm::vec3 rotv)
+{
+  rotatef(angle, rotv.x, rotv.y, rotv.z);
 }
 
 void translatef(float x, float y, float z)
 {
-    mat4 active_m = model_s->top;
-    mat4 transm;
-    transm.x = (vec4){ 1.0f, 0.0f, 0.0f, x };
-    transm.y = (vec4){ 0.0f, 1.0f, 0.0f, y };
-    transm.z = (vec4){ 0.0f, 0.0f, 1.0f, z };
-    transm.w = (vec4){ 0.0f, 0.0f, 0.0f, 1.0f };
+    glm::mat4& active_m = model_s.top();
+    glm::mat4 transm;
+    glm::row(transm, 0, glm::vec4(1.0f, 0.0f, 0.0f, x));
+    glm::row(transm, 1, glm::vec4(0.0f, 1.0f, 0.0f, y));
+    glm::row(transm, 2, glm::vec4(0.0f, 0.0f, 1.0f, z));
+    glm::row(transm, 3, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
-    matMultMat4(&active_m, &transm, &(model_s->top));
+    active_m *= transm;
 }
 
-vec3 performModelTransform(vec3 a)
+void translatev(glm::vec3 dirv)
 {
-    vec4 withW = (vec4){ a.x, a.y, a.z, 1.0f };
-    vec4 res;
-    matMultVec4(&(model_s->top), &withW, &res);
-    return *((vec3*)(&res));
+    translatef(dirv.x, dirv.y, dirv.z);
+}
+
+glm::vec3 performModelTransform(glm::vec3 a)
+{
+    glm::vec4 withW(a, 1.0f);
+    glm::vec4 res = model_s.top() * withW;
+    return glm::vec3(res);
 }
 
 //---------------------------------------
 
-typedef struct vertex_t_ vertex_t;
-struct vertex_t_
-{
-    vec3 pos;
-    vertex_t* next;
-};
+vector<glm::vec3> c_polygon;
 
-typedef struct polygonN_ polygonN;
-struct polygonN_
+struct
 {
-    uint8_t n;
-    vertex_t* vertices;
-};
-
-typedef struct sphere_ sphere;
-struct sphere_
-{
-    vec3 pos;
+    glm::vec3 pos;
     float r;
-};
+} c_sphere;
 
-typedef struct object_ object;
-struct object_
+struct
 {
     uint8_t type;
     uint8_t material;
     uint8_t color;
-    void* obj;
-};
+} c_object;
 
-/**
- * Copies the polygon to the queue, moving the queue*
- * While doing so, decomposes the internal linked list.
- */
-
-uint8_t* addPolygon(void* queue_v, polygonN* pol)
+size_t objectByteSize(void)
 {
-    uint8_t* queue_u = queue_v;
-    *queue_u = pol->n;
-    queue_u++;
-    float* queue_f = (float*)queue_u;
-    vertex_t* tmp;
-
-    for(int i=0; i<pol->n; i++)
-    {
-        tmp = pol->vertices;
-        pol->vertices = pol->vertices->next;
-
-        queue_f[0] = tmp->pos.x;
-        queue_f[1] = tmp->pos.y;
-        queue_f[2] = tmp->pos.z;
-        queue_f += 3;
-
-        free(tmp);
-    }
-    return (uint8_t*)queue_f;
-}
-
-int objectByteSize(object* o)
-{
-    int size = 0;
-    size += 3*(int)sizeof(uint8_t);
-    switch(o->type)
+    size_t size = 0;
+    size += 3*sizeof(uint8_t);
+    switch(c_object.type)
     {
     case POLYGON:
-        size += (int)sizeof(uint8_t);
-        polygonN* p = (polygonN*)o->obj;
-        size += p->n * 3*FLOAT_SIZE;
+        size += sizeof(uint8_t);
+        size += c_polygon.size() * 3*FLOAT_SIZE;
         break;
     case SPHERE:
         size += 3*FLOAT_SIZE; //pos
         size += FLOAT_SIZE; //radius
         break;
     default:
-        break;
+      break;
     }
     return size;
 }
 
-void addToRayTraceQueue(object* data)
+/**
+ * Copies the polygon to the queue, moving the queue* to the next free byte
+ */
+uint8_t* push_polygon(uint8_t* queue_u)
 {
-    offsetsBuffer[queuePos_r] = freeOffset_r;
-    uint8_t* thisObj_u = objectsBuffer+freeOffset_r;
-    thisObj_u[0] = data->type;
-    thisObj_u[1] = data->material;
-    thisObj_u[2] = data->color;
+    *queue_u = (uint8_t)c_polygon.size();
+    queue_u++;
+    float* queue_f = (float*)queue_u;
+
+    for(auto i=c_polygon.begin(); i!=c_polygon.end(); i++)
+    {
+        queue_f[0] = i->x;
+        queue_f[1] = i->y;
+        queue_f[2] = i->z;
+        queue_f += 3;
+    }
+    return (uint8_t*)queue_f;
+}
+
+/**
+ * Copies the sphere to the queue, moving the queue* to the next free byte
+ */
+uint8_t* push_sphere(uint8_t* queue_u)
+{
+    float* queue_f = (float*)queue_u;
+    queue_f[0] = c_sphere.pos.x;
+    queue_f[1] = c_sphere.pos.y;
+    queue_f[2] = c_sphere.pos.z;
+    queue_f[3] = c_sphere.r;
+    return (uint8_t*)(queue_f+4);
+}
+
+// Pushes the object to the objects_buffer at byte index freeOffset_r
+void push_object(void)
+{
+    offsets_buffer[queuePos_r] = freeOffset_r;
+    uint8_t* thisObj_u = objects_buffer+freeOffset_r;
+    thisObj_u[0] = c_object.type;
+    thisObj_u[1] = c_object.material;
+    thisObj_u[2] = c_object.color;
     thisObj_u += 3;
 
-    float* thisObj_f;
-    sphere* s;
-
-    switch(data->type)
+    switch(c_object.type)
     {
     case POLYGON:
-        thisObj_u = addPolygon(thisObj_u, data->obj);
-        freeOffset_r = (int)(thisObj_u - objectsBuffer);
+        thisObj_u = push_polygon(thisObj_u);
         break;
     case SPHERE:
-        thisObj_f = (float*)thisObj_u;
-        s = data->obj;
-        thisObj_f[0] = s->pos.x;
-        thisObj_f[1] = s->pos.y;
-        thisObj_f[2] = s->pos.z;
-        thisObj_f[3] = s->r;
-        thisObj_u = (uint8_t*)(thisObj_f+4);
-        freeOffset_r = (int)(thisObj_u - objectsBuffer);
+        thisObj_u = push_sphere(thisObj_u);
         break;
     default:
         return;
     }
+
+    freeOffset_r = (unsigned int)(thisObj_u - objects_buffer);
     queuePos_r++;
 }
 
 uint8_t c_renderMode;
 uint8_t c_color;
 uint8_t c_material;
-
-object c_object;
-polygonN c_polygon;
-sphere c_sphere;
-vertex_t** c_newVertex;
 
 void begin(uint8_t mode)
 {
@@ -508,21 +480,6 @@ void begin(uint8_t mode)
     c_object.type = mode;
     c_object.material = c_material;
     c_object.color = c_color;
-
-    switch(mode)
-    {
-    case POLYGON:
-        c_object.obj = &c_polygon;
-        c_polygon.n = 0;
-        c_polygon.vertices = NULL;
-        c_newVertex = &(c_polygon.vertices);
-        break;
-    case SPHERE:
-        c_object.obj = &c_sphere;
-        c_sphere.pos.x = 1.0f/0.0f;
-    default:
-        break;
-    }
 }
 
 void colori(uint8_t c)
@@ -535,40 +492,44 @@ void materiali(uint8_t c)
     c_material = c;
 }
 
-void vertexv(vec3 vertex)
+void vertexv(glm::vec3 vertex)
 {
     switch(c_renderMode)
     {
     case POLYGON:
-        c_polygon.n++;
-        *c_newVertex = (vertex_t*)malloc(sizeof(vertex_t));
-        (*c_newVertex)->pos = performModelTransform(vertex);
-        (*c_newVertex)->next = NULL;
-        c_newVertex = &((*c_newVertex)->next);
+        c_polygon.push_back(performModelTransform(vertex));
         break;
     case SPHERE:
-        if(c_sphere.pos.x >= c_sphere.pos.x+10.0f)
-            c_sphere.pos = performModelTransform(vertex);
-        else
-            c_sphere.r = vertex.x;
+        c_sphere.pos = performModelTransform(vertex);
         break;
     default:
         break;
     }
 }
 
-void vertexf(float x, float y, float z)
+void floatf(float f)
 {
-    vertexv((vec3){ x, y, z });
+  c_sphere.r = f;
 }
 
-void end(void)
+void vertexf(float x, float y, float z)
 {
-    int size = objectByteSize(&c_object);
-    if(size+freeOffset_r >= 1000*20*FLOAT_SIZE)
-        flushRTBuffer();
-    if(queuePos_r >= 1000)
-        flushRTBuffer();
+    vertexv(glm::vec3(x, y, z));
+}
 
-    addToRayTraceQueue(&c_object);
+bool end(void)
+{
+    size_t size = objectByteSize();
+
+    bool max_index_reached = queuePos_r >= MAX_PRIMITIVES;
+    bool no_space_left = size+freeOffset_r >= MAX_PRIMITIVES*20*FLOAT_SIZE;
+
+    if(no_space_left || max_index_reached)
+    {
+        buffer_full = true;
+        return false;
+    }
+
+    push_object();
+    return true;
 }

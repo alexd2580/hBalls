@@ -85,7 +85,7 @@ static int save_png_to_file (bitmap_t& bitmap, string& path)
                   PNG_COLOR_TYPE_RGB,
                   PNG_INTERLACE_NONE,
                   PNG_COMPRESSION_TYPE_DEFAULT,
-                  PNG_FILTER_TYPE_DEFAULT);
+                  (png_uint_32)PNG_FILTER_TYPE_DEFAULT);
 
     /* Initialize rows of PNG. */
 

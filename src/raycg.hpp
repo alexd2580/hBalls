@@ -5,6 +5,8 @@
 #include<cstdint>
 #include<string>
 
+#include"cl_ocgl.hpp"
+
 #define UINT8_T(x) ((uint8_t)x)
 
 #define POLYGON UINT8_T(1)
@@ -23,15 +25,14 @@
 #define MIRROR 3
 #define GLASS 4
 
-void setup(unsigned int, unsigned int, const char*);
-void teardown(void);
+void setup(unsigned int, unsigned int, std::string&, OpenCL& cl);
 
-void popMatrix(void);
-void pushMatrix(void);
-void loadIdentity(void);
+void pop_matrix(void);
+void push_matrix(void);
+void load_identity(void);
 
-glm::mat4 getMatrix(void);
-void putMatrix(glm::mat4 mat);
+glm::mat4 get_matrix(void);
+void put_matrix(glm::mat4& mat);
 
 void printInfo(void);
 
@@ -48,8 +49,8 @@ size_x, size_y <-- IT'S TWO INTS!!
 void setPerspective(float fov, float* camPos);
 
 void clearBuffers(void);
-void clearRemoteBuffers(void);
-void printScreen(std::string& fpath);
+void clearRemoteBuffers(OpenCL&);
+void printScreen(std::string& fpath, OpenCL& cl);
 
 void rotatev(float angle, glm::vec3 rotv);
 void rotatef(float angle, float x, float y, float z);
@@ -61,10 +62,11 @@ void begin(uint8_t mode);
 
 void vertexv(glm::vec3 posv);
 void vertexf(float x, float y, float z);
+void floatf(float f); // for the radius
 
 void colori(uint8_t c);
 void materiali(uint8_t c);
 
-void end(void);
+bool end(void);
 
 #endif

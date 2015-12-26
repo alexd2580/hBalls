@@ -12,7 +12,7 @@ and local is userspace
 */
 
 
-class OpenCGL
+class OpenCL
 {
 private:
   cl_uint platform_count;
@@ -22,51 +22,60 @@ private:
 
   cl_context context;
 
-  cl_int error;
-  void checkError(void);
-public:
-  /**
-   * Inits platform ids
-   * Inits device ids from platform 0
-   */
-  OpenCGL(void);
+  static cl_int error;
+  static void checkError(void);
+  static void checkError(std::string);
 
   #define print_platform_info(platform, param) \
     _print_platform_info(platform, param, #param)
   void _print_platform_info(unsigned int platform, cl_platform_info param, std::string param_name);
 
+  #define list_devices(platform, type) \
+    _list_devices(platform, type, #type)
+  void _list_devices(unsigned int platform, cl_device_type type, std::string type_name);
+
+  #define print_device_info(device, param, type) \
+    _print_device_info<type>(device, param, #param)
+  template<typename T> void _print_device_info(unsigned int device, cl_device_info type, std::string type_name);
+public:
+  /**
+   * Inits platform ids
+   * Inits device ids from platform 0
+   */
+  OpenCL();
+
   /**
    * Frees platform ids
    * Frees device ids
    */
-  ~OpenCGL(void);
+  ~OpenCL(void);
 
   /**
    * Creates a remote buffer of byte_size bytes size
    * and fills it with bytes
    */
-  cl_mem allocateSpace(size_t byte_size, void* bytes);
+  cl_mem allocate_space(size_t byte_size, void* bytes);
 
   /**
    * Loads a program and compiles it to a kernel
    * main function is identified by mainFunction
    */
-  cl_kernel loadProgram(std::string& fpath, std::string& mainFunction);
+  cl_kernel load_program(std::string& fpath, std::string& mainFunction);
 
   /**
    * Blocks until the given event has been completed.
    */
-  void waitForEvent(cl_event& e);
+  static void waitForEvent(cl_event& e);
 
   /**
-   * Returns the statuc code of the event. non-blocking.
+   * Returns the status code of the event. non-blocking.
    */
-  cl_int getEventStatus(cl_event& e);
+  static cl_int getEventStatus(cl_event& e);
 
   /**
    * the argunemt ar nr.th element to the kernel
    */
-  void setArgument(cl_kernel& kernel, int nr, int arg_size, void* arg);
+  static void setArgument(cl_kernel& kernel, int nr, int arg_size, void* arg);
 
   /**
    * Starts a command queue.
@@ -78,7 +87,7 @@ public:
    * Put kernel(action) into queue
    * Returns an event by which the computation can be identified
    */
-  cl_event enqueueKernelInQueue(size_t width, cl_kernel& kernel, cl_command_queue& queue);
+  static cl_event enqueue_kernel(size_t width, cl_kernel& kernel, cl_command_queue& queue);
 
   /**
    * Input:
@@ -87,7 +96,7 @@ public:
    * bytes -> number of bytes
    * data -> data*
    */
-  void writeBufferBlocking(cl_command_queue& queue, cl_mem buffer, size_t bytes, void* data);
+  static void writeBufferBlocking(cl_command_queue& queue, cl_mem buffer, size_t bytes, void* data);
 
   /**
    * Input:
@@ -99,7 +108,7 @@ public:
    * Waits for event to terminate, and copies bytes bytes from remoteBuf
    * to localBuf
    */
-  void readBufferBlocking(cl_command_queue& queue, cl_mem remoteBuf, size_t bytes, void* localBuf);
+  static void readBufferBlocking(cl_command_queue& queue, cl_mem remoteBuf, size_t bytes, void* localBuf);
 };
 
 #endif

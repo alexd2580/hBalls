@@ -6,6 +6,8 @@
 
 using namespace std;
 
+cl_int OpenCL::error;
+
 typedef struct event_queue_ event_queue;
 struct event_queue_
 {
@@ -13,7 +15,7 @@ struct event_queue_
     event_queue* next;
 };
 
-void OpenCGL::checkError(void)
+void OpenCL::checkError(void)
 {
   if(error!=CL_SUCCESS)
   {
@@ -22,7 +24,16 @@ void OpenCGL::checkError(void)
   }
 }
 
-OpenCGL::~OpenCGL(void)
+void OpenCL::checkError(string msg)
+{
+  if(error!=CL_SUCCESS)
+  {
+    cout << "Failure (" << msg << "): " << error << endl;
+    exit(1);
+  }
+}
+
+OpenCL::~OpenCL(void)
 {
     clReleaseContext(context);
     free(device_ids);
@@ -49,7 +60,7 @@ bool load_file(string& name, string& content)
     return false;
 }
 
-void OpenCGL::_print_platform_info
+void OpenCL::_print_platform_info
 (
     unsigned int platform,
     cl_platform_info param,
@@ -68,11 +79,53 @@ void OpenCGL::_print_platform_info
   free(text);
 }
 
-OpenCGL::OpenCGL(void)
+void OpenCL::_list_devices(unsigned int platform, cl_device_type type, std::string type_name)
+{
+  cout << "Listing devices of type " << type_name << " on platform " << platform << endl;
+
+  error = clGetDeviceIDs(platform_ids[platform], type, 0, nullptr, &device_count);
+  checkError("clGetDeviceIDs count");
+  device_ids = (cl_device_id*)malloc(sizeof(cl_device_id)*device_count);
+  if(device_ids == nullptr)
+  {
+      cerr << "Memory allocation failed." << endl;
+      exit(-1);
+  }
+
+  error = clGetDeviceIDs(platform_ids[platform], type, device_count, device_ids, nullptr);
+  checkError("clGetDeviceIDs");
+
+  for(unsigned int i=0; i<device_count; i++)
+  {
+      cerr << "Device: " << i << endl;
+      print_device_info(i, CL_DEVICE_AVAILABLE, cl_bool);
+      print_device_info(i, CL_DEVICE_COMPILER_AVAILABLE, cl_bool);
+      print_device_info(i, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_bool);
+      print_device_info(i, CL_DEVICE_GLOBAL_MEM_SIZE, cl_ulong);
+      print_device_info(i, CL_DEVICE_MAX_CLOCK_FREQUENCY, cl_uint);
+      print_device_info(i, CL_DEVICE_MAX_COMPUTE_UNITS, cl_uint);
+      print_device_info(i, CL_DEVICE_MAX_CONSTANT_ARGS, cl_uint);
+      print_device_info(i, CL_DEVICE_MAX_WORK_GROUP_SIZE, size_t);
+      print_device_info(i, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, cl_uint);
+  }
+  cerr << endl;
+
+}
+
+template<typename T> void OpenCL::_print_device_info(unsigned device, cl_device_info param, std::string param_name)
+{
+  T res;
+  error = clGetDeviceInfo(device_ids[device], param, sizeof(T), &res, nullptr);
+  checkError("clGetDeviceInfo device info");
+
+  cerr << param_name << "=" << res << endl;
+}
+
+OpenCL::OpenCL(void)
 {
     //platformCount, platformIDs
     error = clGetPlatformIDs(0, nullptr, &platform_count);
-    checkError();
+    checkError("clGetPlatformIDs count");
     platform_ids = (cl_platform_id*)malloc(sizeof(cl_platform_id)*platform_count);
     if(platform_ids == nullptr)
     {
@@ -81,7 +134,7 @@ OpenCGL::OpenCGL(void)
     }
 
     error = clGetPlatformIDs(platform_count, platform_ids, nullptr);
-    checkError();
+    checkError("clGetPlatformIDs");
 
     for(unsigned int i=0; i<platform_count; i++)
     {
@@ -93,58 +146,19 @@ OpenCGL::OpenCGL(void)
         print_platform_info(i, CL_PLATFORM_EXTENSIONS);
     }
 
-    //deviceCount, deviceIDs
-    error = clGetDeviceIDs(
-      platform_ids[0], CL_DEVICE_TYPE_CPU, 0, nullptr, &device_count);
-    checkError();
-    device_ids = (cl_device_id*)malloc(sizeof(cl_device_id)*device_count);
-    if(device_ids == nullptr)
-    {
-        cerr << "Memory allocation failed." << endl;
-        exit(-1);
-    }
-
-    error = clGetDeviceIDs(
-      platform_ids[0], CL_DEVICE_TYPE_CPU, device_count, device_ids, nullptr);
-    checkError();
-
-    for(unsigned int i=0; i<device_count; i++)
-    {
-        cerr << "Device: " << i << endl;
-        cl_device_type cdt;
-
-        error = clGetDeviceInfo(
-            device_ids[i], CL_DEVICE_TYPE, sizeof(cl_device_type), &cdt, nullptr);
-        checkError();
-        switch(cdt)
-        {
-        #define print_case(x) case x: cerr << #x << endl; break;
-        print_case(CL_DEVICE_TYPE_CPU)
-        print_case(CL_DEVICE_TYPE_GPU)
-        print_case(CL_DEVICE_TYPE_ACCELERATOR)
-        default:
-            cerr << "WTF?!" << endl;
-            break;
-        }
-        cerr << endl;
-    }
+    list_devices(0, CL_DEVICE_TYPE_GPU);
 
     //create context
     cl_context_properties contextProperties[] =
-    {
-        CL_CONTEXT_PLATFORM, (cl_context_properties)(platform_ids[0]), 0, 0
-    };
+    { CL_CONTEXT_PLATFORM, (cl_context_properties)(platform_ids[0]), 0, 0 };
 
-    context = clCreateContext(
-        contextProperties, device_count,
-        device_ids, nullptr, nullptr, &error
-    );
-    checkError();
+    context = clCreateContext(contextProperties, device_count, device_ids, nullptr, nullptr, &error);
+    checkError("clCreateContext");
 
     cerr << "OpenCL started" << endl;
 }
 
-cl_mem OpenCGL::allocateSpace(size_t byte_size, void* bytes)
+cl_mem OpenCL::allocate_space(size_t byte_size, void* bytes)
 {
     cl_mem remoteBuffer = clCreateBuffer(context,
         CL_MEM_READ_WRITE | (bytes != nullptr ? CL_MEM_COPY_HOST_PTR : 0),
@@ -153,7 +167,7 @@ cl_mem OpenCGL::allocateSpace(size_t byte_size, void* bytes)
     return remoteBuffer;
 }
 
-cl_kernel OpenCGL::loadProgram(string& fpath, string& mainFunction)
+cl_kernel OpenCL::load_program(string& fpath, string& mainFunction)
 {
     string kernel_string;
     if(!load_file(fpath, kernel_string))
@@ -191,13 +205,13 @@ cl_kernel OpenCGL::loadProgram(string& fpath, string& mainFunction)
     return kernel;
 }
 
-void OpenCGL::waitForEvent(cl_event& e)
+void OpenCL::waitForEvent(cl_event& e)
 {
     error = clWaitForEvents(1, &e);
     checkError();
 }
 
-cl_int OpenCGL::getEventStatus(cl_event& e)
+cl_int OpenCL::getEventStatus(cl_event& e)
 {
     cl_int stat;
     error = clGetEventInfo(e, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(cl_int), &stat, NULL);
@@ -205,20 +219,20 @@ cl_int OpenCGL::getEventStatus(cl_event& e)
     return stat;
 }
 
-void OpenCGL::setArgument(cl_kernel& kernel, int nr, int arg_size, void* arg)
+void OpenCL::setArgument(cl_kernel& kernel, int nr, int arg_size, void* arg)
 {
     error = clSetKernelArg(kernel, (cl_uint)nr, (size_t)arg_size, arg);
     checkError();
 }
 
-cl_command_queue OpenCGL::createCommandQueue(void)
+cl_command_queue OpenCL::createCommandQueue(void)
 {
     cl_command_queue queue = clCreateCommandQueue(context, device_ids[0], 0, &error);
     checkError();
     return queue;
 }
 
-cl_event OpenCGL::enqueueKernelInQueue(size_t width, cl_kernel& kernel, cl_command_queue& queue)
+cl_event OpenCL::enqueue_kernel(size_t width, cl_kernel& kernel, cl_command_queue& queue)
 {
     const size_t workSize[] = { width, 0, 0 };
     cl_event event;
@@ -232,14 +246,14 @@ cl_event OpenCGL::enqueueKernelInQueue(size_t width, cl_kernel& kernel, cl_comma
     return event;
 }
 
-void OpenCGL::writeBufferBlocking(cl_command_queue& queue, cl_mem buffer, size_t bytes, void* data)
+void OpenCL::writeBufferBlocking(cl_command_queue& queue, cl_mem buffer, size_t bytes, void* data)
 {
     error = clEnqueueWriteBuffer(queue, buffer, CL_TRUE,
         0, bytes, data, 0, nullptr, nullptr);
     checkError();
 }
 
-void OpenCGL::readBufferBlocking(cl_command_queue& queue, cl_mem remoteBuf, size_t bytes, void* localBuf)
+void OpenCL::readBufferBlocking(cl_command_queue& queue, cl_mem remoteBuf, size_t bytes, void* localBuf)
 {
   error = clEnqueueReadBuffer(queue, remoteBuf, CL_TRUE, 0,
     bytes, localBuf, 0, nullptr, nullptr);
