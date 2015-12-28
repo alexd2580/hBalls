@@ -9,13 +9,19 @@
 
 #define UINT8_T(x) ((uint8_t)x)
 
-#define POLYGON UINT8_T(1)
+// used by opencl kernel
+#define TRIANGLE UINT8_T(1)
 #define SPHERE UINT8_T(2)
+
+// local defines
+#define TRIANGLE_FAN UINT8_T(3)
+#define TRIANGLE_STRIP UINT8_T(4)
+#define QUAD UINT8_T(5)
 
 #define SIZE_OF(x) ((size_t)sizeof(x))
 
 #define CHAR_SIZE SIZE_OF(char)
-#define INT_SIZE SIZE_OF(int)
+#define INT_SIZE SIZE_OF(int32_t)
 #define FLOAT_SIZE SIZE_OF(float)
 #define MEM_SIZE SIZE_OF(cl_mem)
 
@@ -58,15 +64,14 @@ void translatev(glm::vec3 dirv);
 void translatef(float x, float y, float z);
 
 //Scene description
-void begin(uint8_t mode);
+void set_mode(uint8_t mode);
 
 void vertexv(glm::vec3 posv);
 void vertexf(float x, float y, float z);
-void floatf(float f); // for the radius
+void spherev(glm::vec3 posv, float r);
+void spheref(float x, float y, float z, float r);
 
 void colori(uint8_t c);
 void materiali(uint8_t c);
-
-bool end(void);
 
 #endif

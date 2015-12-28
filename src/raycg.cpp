@@ -6,7 +6,9 @@
 #include<stack>
 #include<vector>
 #include<glm/glm.hpp>
+#include<glm/gtc/matrix_transform.hpp>
 #include<glm/gtc/matrix_access.hpp>
+
 
 #define __USE_BSD	//to get usleep
 #include <unistd.h>
@@ -32,8 +34,8 @@ int view_max_y;
  * Local Buffers
  */
 uint8_t*        frame_buffer;
-uint8_t*        objects_buffer;
-unsigned int*   offsets_buffer;
+uint32_t*       objects_buffer; //data items MUST be aligned! max(type T) = 4byte
+int32_t*        offsets_buffer;
 bool            buffer_full;
 
 unsigned int  queuePos_r;
@@ -101,7 +103,7 @@ void load_identity(void) // TODO find a better implementation
 /**
  * Returns a copy of the current active top-stack matrix
  */
-glm::mat4 get_matrix(void)
+__attribute__((pure)) glm::mat4 get_matrix(void)
 {
     return model_s.top();
 }
@@ -157,15 +159,15 @@ void setup(unsigned int w, unsigned int h, string& tracepath, OpenCL& cl)
     view_max_y = size_h/2;
 
     frame_buffer  = (uint8_t*)        malloc(size_h*size_w*sizeof(uint8_t));
-    objects_buffer = (uint8_t*)       malloc(MAX_PRIMITIVES*20*FLOAT_SIZE);
-    offsets_buffer = (unsigned int*)  malloc(MAX_PRIMITIVES*INT_SIZE);
+    objects_buffer = (uint32_t*)      malloc(MAX_PRIMITIVES*10*FLOAT_SIZE);
+    offsets_buffer = (int32_t*)       malloc(MAX_PRIMITIVES*INT_SIZE);
 
     queuePos_r = 0;
     freeOffset_r = 0;
 
-    frameBuf_mem = cl.allocate_space(size_h*size_w*(int)sizeof(uint8_t), nullptr);
+    frameBuf_mem = cl.allocate_space(size_h*size_w*sizeof(uint8_t), nullptr);
     fov_mem = cl.allocate_space(16*FLOAT_SIZE, nullptr);
-    objects_mem = cl.allocate_space(MAX_PRIMITIVES*20*FLOAT_SIZE, nullptr);
+    objects_mem = cl.allocate_space(MAX_PRIMITIVES*10*FLOAT_SIZE, nullptr);
     offsets_mem = cl.allocate_space(MAX_PRIMITIVES*INT_SIZE, nullptr);
     depthBuf_mem = cl.allocate_space(size_w*size_h*FLOAT_SIZE, nullptr);
 
@@ -199,11 +201,10 @@ size_x, size_y <-- IT'S TWO INTS!!
     memcpy(dataCpy+2, camPos, 3*FLOAT_SIZE); //pos
     glm::vec3 dir(camPos[3], camPos[4], camPos[5]);
     glm::vec3 up(camPos[6], camPos[7], camPos[8]);
+    dir = normalize(dir);
+    up = normalize(up);
     glm::vec3 left = glm::cross(up, dir);
     up = cross(dir, left);
-    normalize(dir);
-    normalize(up);
-    normalize(left);
 
     dataCpy[5] = dir.x;
     dataCpy[6] = dir.y;
@@ -225,7 +226,8 @@ void flushRTBuffer(OpenCL& cl)
 {
     cout << "Flushing object buffer..." << endl;
     OpenCL::writeBufferBlocking(framebufferqueue,
-      objects_mem, MAX_PRIMITIVES*20*FLOAT_SIZE, objects_buffer);
+      objects_mem, MAX_PRIMITIVES*10*FLOAT_SIZE, objects_buffer);
+
     OpenCL::writeBufferBlocking(framebufferqueue,
       offsets_mem, MAX_PRIMITIVES*INT_SIZE, offsets_buffer);
 
@@ -282,16 +284,18 @@ void flushRTBuffer(OpenCL& cl)
             }
         }
 
-        cerr << "\x1b[1A\r";
-        cerr << "                              \r"
+        cout << "                              \r"
              << "Queued:   " << queued << " / " << size_h << endl;
         //printf("                         \r %d / %d running...\n", running, size_y);
-        cerr << "                              \r"
+        cout << "                              \r"
              << "Finished: " << finished << " / " << size_h << " ...";
-
+        cout << "\x1b[1A\r";
+        cout.flush();
         usleep(10000);
     }
-    cout << endl;
+    cout << endl << endl;
+
+    clFinish(framebufferqueue);
 
     delete[] eventList;
 
@@ -311,60 +315,29 @@ void printScreen(string& fpath, OpenCL& cl)
     cout << "Saving to file" << endl;
     saveBWToFile(frame_buffer, size_w, size_h, fpath);
     cout << "Done" << endl;
+    cout.flush();
 }
 
 void rotatef(float angle, float x, float y, float z)
 {
-    float len = sqrt(x*x+y*y+z*z);
-    x /= len;
-    y /= len;
-    z /= len;
-
-    glm::mat4& active_m = model_s.top();
-    glm::mat4 rotm;
-    float ca = (float)cos(angle);
-    float sa = (float)sin(angle);
-
-    glm::row(rotm, 0, glm::vec4(
-        x*x*(1-ca)+ca,
-        x*y*(1-ca)-z*sa,
-        x*z*(1-ca)+y*sa,
-        0.0f));
-    glm::row(rotm, 1, glm::vec4(
-        y*x*(1-ca)+z*sa,
-        y*y*(1-ca)+ca,
-        y*z*(1-ca)-x*sa,
-        0.0f));
-    glm::row(rotm, 2, glm::vec4(
-        z*x*(1-ca)-y*sa,
-        z*y*(1-ca)+x*sa,
-        z*z*(1-ca)+ca,
-        0.0f));
-    glm::row(rotm, 3, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-
-    active_m *= rotm;
+    rotatev(angle, glm::vec3(x,y,z));
 }
 
 void rotatev(float angle, glm::vec3 rotv)
 {
-  rotatef(angle, rotv.x, rotv.y, rotv.z);
-}
-
-void translatef(float x, float y, float z)
-{
-    glm::mat4& active_m = model_s.top();
-    glm::mat4 transm;
-    glm::row(transm, 0, glm::vec4(1.0f, 0.0f, 0.0f, x));
-    glm::row(transm, 1, glm::vec4(0.0f, 1.0f, 0.0f, y));
-    glm::row(transm, 2, glm::vec4(0.0f, 0.0f, 1.0f, z));
-    glm::row(transm, 3, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
-
-    active_m *= transm;
+  const glm::mat4 rotate = glm::rotate(model_s.top(), angle, rotv);
+  model_s.top() = rotate;
 }
 
 void translatev(glm::vec3 dirv)
 {
-    translatef(dirv.x, dirv.y, dirv.z);
+  const glm::mat4 translate = glm::translate(model_s.top(), dirv);
+  model_s.top() = translate;
+}
+
+void translatef(float x, float y, float z)
+{
+    translatev(glm::vec3(x,y,z));
 }
 
 glm::vec3 performModelTransform(glm::vec3 a)
@@ -376,7 +349,7 @@ glm::vec3 performModelTransform(glm::vec3 a)
 
 //---------------------------------------
 
-vector<glm::vec3> c_polygon;
+glm::vec3 c_triangle[3];
 
 struct
 {
@@ -391,15 +364,14 @@ struct
     uint8_t color;
 } c_object;
 
-size_t objectByteSize(void)
+__attribute__((pure)) size_t objectByteSize(void)
 {
     size_t size = 0;
-    size += 3*sizeof(uint8_t);
+    size += FLOAT_SIZE; //3*sizeof(uint8_t);
     switch(c_object.type)
     {
-    case POLYGON:
-        size += sizeof(uint8_t);
-        size += c_polygon.size() * 3*FLOAT_SIZE;
+    case TRIANGLE:
+        size += 3 * 3*FLOAT_SIZE;
         break;
     case SPHERE:
         size += 3*FLOAT_SIZE; //pos
@@ -414,109 +386,161 @@ size_t objectByteSize(void)
 /**
  * Copies the polygon to the queue, moving the queue* to the next free byte
  */
-uint8_t* push_polygon(uint8_t* queue_u)
+float* push_triangle(float* queue_f)
 {
-    *queue_u = (uint8_t)c_polygon.size();
-    queue_u++;
-    float* queue_f = (float*)queue_u;
-
-    for(auto i=c_polygon.begin(); i!=c_polygon.end(); i++)
+    for(int i=0; i<3; i++)
     {
-        queue_f[0] = i->x;
-        queue_f[1] = i->y;
-        queue_f[2] = i->z;
-        queue_f += 3;
+      queue_f[0] = c_triangle[i].x;
+      queue_f[1] = c_triangle[i].y;
+      queue_f[2] = c_triangle[i].z;
+      queue_f += 3;
     }
-    return (uint8_t*)queue_f;
+    return queue_f;
 }
 
 /**
  * Copies the sphere to the queue, moving the queue* to the next free byte
  */
-uint8_t* push_sphere(uint8_t* queue_u)
+float* push_sphere(float* queue_f)
 {
-    float* queue_f = (float*)queue_u;
     queue_f[0] = c_sphere.pos.x;
     queue_f[1] = c_sphere.pos.y;
     queue_f[2] = c_sphere.pos.z;
     queue_f[3] = c_sphere.r;
-    return (uint8_t*)(queue_f+4);
+    return queue_f+4;
 }
 
 // Pushes the object to the objects_buffer at byte index freeOffset_r
 void push_object(void)
 {
     offsets_buffer[queuePos_r] = freeOffset_r;
-    uint8_t* thisObj_u = objects_buffer+freeOffset_r;
+    uint8_t* thisObj_u = (uint8_t*)(objects_buffer+freeOffset_r);
     thisObj_u[0] = c_object.type;
     thisObj_u[1] = c_object.material;
     thisObj_u[2] = c_object.color;
-    thisObj_u += 3;
+
+    float* thisObj_f = (float*)(objects_buffer+freeOffset_r+1);
 
     switch(c_object.type)
     {
-    case POLYGON:
-        thisObj_u = push_polygon(thisObj_u);
+    case TRIANGLE:
+        thisObj_f = push_triangle(thisObj_f);
         break;
     case SPHERE:
-        thisObj_u = push_sphere(thisObj_u);
+        thisObj_f = push_sphere(thisObj_f);
         break;
     default:
         return;
     }
 
-    freeOffset_r = (unsigned int)(thisObj_u - objects_buffer);
+    freeOffset_r = (int32_t)((uint32_t*)thisObj_f - objects_buffer);
     queuePos_r++;
 }
 
 uint8_t c_renderMode;
-uint8_t c_color;
-uint8_t c_material;
+uint8_t c_vertex_count;
 
-void begin(uint8_t mode)
+void set_mode(uint8_t mode)
 {
     c_renderMode = mode;
 
-    c_object.type = mode;
-    c_object.material = c_material;
-    c_object.color = c_color;
+    switch(mode)
+    {
+    case SPHERE:
+      c_object.type = SPHERE;
+      break;
+    default:
+      c_object.type = TRIANGLE;
+      break;
+    }
+
+    c_vertex_count = 0;
 }
 
 void colori(uint8_t c)
 {
-    c_color = c;
+    c_object.color = c;
 }
 
 void materiali(uint8_t c)
 {
-    c_material = c;
+    c_object.material = c;
 }
 
 void vertexv(glm::vec3 vertex)
 {
     switch(c_renderMode)
     {
-    case POLYGON:
-        c_polygon.push_back(performModelTransform(vertex));
+    case TRIANGLE:
+        c_triangle[c_vertex_count] = performModelTransform(vertex);
+        c_vertex_count++;
+        if(c_vertex_count == 3)
+        {
+          push_object();
+          c_vertex_count = 0;
+        }
+        break;
+    case TRIANGLE_FAN:
+        c_triangle[c_vertex_count] = performModelTransform(vertex);
+        c_vertex_count++;
+        if(c_vertex_count == 3)
+        {
+          push_object();
+          c_triangle[1] = c_triangle[2];
+          c_vertex_count = 2;
+        }
+        break;
+    case TRIANGLE_STRIP:
+        c_triangle[c_vertex_count] = performModelTransform(vertex);
+        c_vertex_count++;
+        if(c_vertex_count == 3)
+        {
+          push_object();
+          c_triangle[0] = c_triangle[2];
+          c_vertex_count = 2;
+        }
+        break;
+    case QUAD:
+        if(c_vertex_count == 3)
+        {
+          push_object();
+          c_triangle[1] = c_triangle[2];
+          c_triangle[2] = performModelTransform(vertex);
+          push_object();
+          c_vertex_count = 0;
+        }
+        else
+        {
+          c_triangle[c_vertex_count] = performModelTransform(vertex);
+          c_vertex_count++;
+        }
         break;
     case SPHERE:
-        c_sphere.pos = performModelTransform(vertex);
         break;
     default:
         break;
     }
 }
 
-void floatf(float f)
-{
-  c_sphere.r = f;
-}
-
 void vertexf(float x, float y, float z)
 {
-    vertexv(glm::vec3(x, y, z));
+  vertexv(glm::vec3(x, y, z));
 }
 
+void spherev(glm::vec3 pos, float r)
+{
+  c_sphere.pos = pos;
+  c_sphere.r = r;
+  push_object();
+}
+
+void spheref(float x, float y, float z, float r)
+{
+  spherev(glm::vec3(x, y, z), r);
+}
+
+
+/*
 bool end(void)
 {
     size_t size = objectByteSize();
@@ -532,4 +556,4 @@ bool end(void)
 
     push_object();
     return true;
-}
+}*/

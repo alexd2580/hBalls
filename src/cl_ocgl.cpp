@@ -75,7 +75,7 @@ void OpenCL::_print_platform_info
   error = clGetPlatformInfo(
     platform_ids[platform], param, size, text, nullptr);
   checkError();
-  cerr << param_name << ": " << text << endl;
+  cout << param_name << ": " << text << endl;
   free(text);
 }
 
@@ -88,7 +88,7 @@ void OpenCL::_list_devices(unsigned int platform, cl_device_type type, std::stri
   device_ids = (cl_device_id*)malloc(sizeof(cl_device_id)*device_count);
   if(device_ids == nullptr)
   {
-      cerr << "Memory allocation failed." << endl;
+      cout << "Memory allocation failed." << endl;
       exit(-1);
   }
 
@@ -97,7 +97,7 @@ void OpenCL::_list_devices(unsigned int platform, cl_device_type type, std::stri
 
   for(unsigned int i=0; i<device_count; i++)
   {
-      cerr << "Device: " << i << endl;
+      cout << "Device: " << i << endl;
       print_device_info(i, CL_DEVICE_AVAILABLE, cl_bool);
       print_device_info(i, CL_DEVICE_COMPILER_AVAILABLE, cl_bool);
       print_device_info(i, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_bool);
@@ -108,7 +108,7 @@ void OpenCL::_list_devices(unsigned int platform, cl_device_type type, std::stri
       print_device_info(i, CL_DEVICE_MAX_WORK_GROUP_SIZE, size_t);
       print_device_info(i, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, cl_uint);
   }
-  cerr << endl;
+  cout << endl;
 
 }
 
@@ -118,7 +118,7 @@ template<typename T> void OpenCL::_print_device_info(unsigned device, cl_device_
   error = clGetDeviceInfo(device_ids[device], param, sizeof(T), &res, nullptr);
   checkError("clGetDeviceInfo device info");
 
-  cerr << param_name << "=" << res << endl;
+  cout << param_name << "=" << res << endl;
 }
 
 OpenCL::OpenCL(void)
@@ -129,7 +129,7 @@ OpenCL::OpenCL(void)
     platform_ids = (cl_platform_id*)malloc(sizeof(cl_platform_id)*platform_count);
     if(platform_ids == nullptr)
     {
-        cerr << "Memory allocation failed." << endl;
+        cout << "Memory allocation failed." << endl;
         exit(-1);
     }
 
@@ -138,7 +138,7 @@ OpenCL::OpenCL(void)
 
     for(unsigned int i=0; i<platform_count; i++)
     {
-        cerr << "Platform: " << i << endl;
+        cout << "Platform: " << i << endl;
 
         print_platform_info(i, CL_PLATFORM_VERSION);
         print_platform_info(i, CL_PLATFORM_NAME);
@@ -155,7 +155,7 @@ OpenCL::OpenCL(void)
     context = clCreateContext(contextProperties, device_count, device_ids, nullptr, nullptr, &error);
     checkError("clCreateContext");
 
-    cerr << "OpenCL started" << endl;
+    cout << "OpenCL started" << endl;
 }
 
 cl_mem OpenCL::allocate_space(size_t byte_size, void* bytes)
@@ -172,7 +172,7 @@ cl_kernel OpenCL::load_program(string& fpath, string& mainFunction)
     string kernel_string;
     if(!load_file(fpath, kernel_string))
     {
-      cerr << "Could not read file " << fpath << endl;
+      cout << "Could not read file " << fpath << endl;
       exit(1); // TODO
     }
     char const* kernel_string_ptr = kernel_string.c_str();
@@ -194,7 +194,7 @@ cl_kernel OpenCL::load_program(string& fpath, string& mainFunction)
         // Get the log
         clGetProgramBuildInfo(program, device_ids[0], CL_PROGRAM_BUILD_LOG, log_size, log, nullptr);
         // Print the log
-        cerr << "Error while building program " << fpath << endl << log << endl;
+        cout << "Error while building program " << fpath << endl << log << endl;
         exit(1);
     }
 
