@@ -270,9 +270,8 @@ kernel void trace //main
     global float* fov,
     global uchar* objects,
     global int* offsets,
-    global uchar* frameBuf,
+    global uint* frameBuf,
     global float* depthBuf,
-    global char* lights
 )
 {
     const int id = *startID + get_global_id(0);
@@ -354,7 +353,9 @@ kernel void trace //main
 
     }
     frag = clamp(frag*(ambient+diffuse)+specular, 0.0f, 1.0f);
-    frameBuf[id] = (uchar)floor(255.1f*frag);
+    uchar frag_c = (uchar)floor(255.1f*frag);
+    int frag_i = frag_c << 24 | frag_c << 16 | frag_c << 8 | 255;
+    frameBuf[id] = frag_i;
     depthBuf[id] = depth;
     return;
 }

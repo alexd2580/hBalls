@@ -5,8 +5,8 @@
 
 namespace SDL
 {
-  int initSDL(unsigned int w, unsigned int h);
-  void closeSDL(void);
+  int init(unsigned int w, unsigned int h);
+  void close(void);
 
   void drawFrame(uint32_t* pixels);
   void handleEvents(void);

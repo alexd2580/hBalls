@@ -1,4 +1,4 @@
-#include"cl_ocgl.hpp"
+#include"cl.hpp"
 
 #include<iostream>
 #include<cstdlib>

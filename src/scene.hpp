@@ -3,12 +3,6 @@
 
 #include<glm/glm.hpp>
 #include<cstdint>
-#include<string>
-
-#include"cl_ocgl.hpp"
-
-namespace Scene
-{
 
 #define UINT8_T(x) ((uint8_t)x)
 
@@ -21,50 +15,61 @@ namespace Scene
 #define TRIANGLE_STRIP UINT8_T(4)
 #define QUAD UINT8_T(5)
 
-#define SIZE_OF(x) ((size_t)sizeof(x))
-
-#define CHAR_SIZE SIZE_OF(char)
-#define INT_SIZE SIZE_OF(int32_t)
-#define FLOAT_SIZE SIZE_OF(float)
-#define MEM_SIZE SIZE_OF(cl_mem)
-
 //Surface types
 #define MATT 1
 #define METALLIC 2
 #define MIRROR 3
 #define GLASS 4
 
-unsigned int size_w;
-unsigned int size_h;
+#define MAX_PRIMITIVES 1000
 
-void setup(unsigned int, unsigned int, std::string&, OpenCL& cl);
+#define SIZE_OF(x) ((size_t)sizeof(x))
 
-void pop_matrix(void);
-void push_matrix(void);
-void load_identity(void);
+#define CHAR_SIZE SIZE_OF(char)
+#define INT_SIZE SIZE_OF(int32_t)
+#define FLOAT_SIZE SIZE_OF(float)
 
-glm::mat4 get_matrix(void);
-void put_matrix(glm::mat4& mat);
+namespace Scene
+{
+  extern unsigned int size_w;
+  extern unsigned int size_h;
 
-void printInfo(void);
+  /**
+   * Local Buffers
+   */
+  extern uint32_t*       objects_buffer; //data items MUST be aligned! max(type T) = 4byte
+  extern int32_t*        offsets_buffer;
+  extern bool            buffer_full;
 
-//----------------------
+  void init(unsigned int, unsigned int);
+  void clearBuffers(void);
 
-void rotatev(float angle, glm::vec3 rotv);
-void rotatef(float angle, float x, float y, float z);
-void translatev(glm::vec3 dirv);
-void translatef(float x, float y, float z);
+  void pop_matrix(void);
+  void push_matrix(void);
+  void load_identity(void);
 
-//Scene description
-void set_mode(uint8_t mode);
+  glm::mat4 get_matrix(void);
+  void put_matrix(glm::mat4& mat);
 
-void vertexv(glm::vec3 posv);
-void vertexf(float x, float y, float z);
-void spherev(glm::vec3 posv, float r);
-void spheref(float x, float y, float z, float r);
+  void printInfo(void);
 
-void colori(uint8_t c);
-void materiali(uint8_t c);
+  //----------------------
+
+  void rotatev(float angle, glm::vec3 rotv);
+  void rotatef(float angle, float x, float y, float z);
+  void translatev(glm::vec3 dirv);
+  void translatef(float x, float y, float z);
+
+  //Scene description
+  void set_mode(uint8_t mode);
+
+  void vertexv(glm::vec3 posv);
+  void vertexf(float x, float y, float z);
+  void spherev(glm::vec3 posv, float r);
+  void spheref(float x, float y, float z, float r);
+
+  void colori(uint8_t c);
+  void materiali(uint8_t c);
 
 }
 #endif

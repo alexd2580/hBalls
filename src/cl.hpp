@@ -22,7 +22,7 @@ public:
   void print(void);
 };
 
-class OpenCL
+class OpenCL // TODO rewrite to namespace?
 {
 private:
   cl_uint platform_count;

@@ -25,9 +25,9 @@ namespace SDL
 
 	bool die = false;
 
-	int initSDL(unsigned int w, unsigned int h)
+	int init(unsigned int w, unsigned int h)
 	{
-		cerr << "[SDL] Loading SDL" << endl;
+		cout << "[SDL] Initializing" << endl;
 
 	  image_w = w;
 	  image_h = h;
@@ -77,18 +77,18 @@ namespace SDL
 			return 1;
 		}
 
-		cerr << "[SDL] Done loading SDL" << endl;
+		cout << "[SDL] Done." << endl;
 		return 0;
 	}
 
-	void closeSDL(void)
+	void close(void)
 	{
-		cerr << "[SDL] Closing SDL" << endl;
+		cout << "[SDL] Closing." << endl;
 		SDL_DestroyTexture(texture);
 		SDL_DestroyRenderer(renderer);
 		SDL_DestroyWindow(window);
 		SDL_Quit();
-		cerr << "[SDL] SDL closed" << endl;
+		cout << "[SDL] Closed." << endl;
 	}
 
 	void handleEvents(void)
@@ -120,7 +120,7 @@ namespace SDL
 	void drawFrame(uint32_t* pixels)
 	{
 		SDL_RenderClear(renderer);
-		SDL_UpdateTexture(texture, 0, pixels, image_w * sizeof(uint32_t));
+		SDL_UpdateTexture(texture, 0, pixels, image_w * (int)sizeof(uint32_t));
 		SDL_RenderCopy(renderer, texture, 0, 0);
 		SDL_RenderPresent(renderer);
 	}

@@ -11,15 +11,15 @@ clock_gettime(CLOCK_REALTIME, &abstime);
 abstime.tv_sec += cooldown;
 pthread_cond_timedwait(&notifier, &mutex, &abstime);*/
 
-#include"raycg.hpp"
-#include"cl_ocgl.hpp"
+#include"scene.hpp"
+#include"cl_helper.hpp"
 #include"sdl.hpp"
 
 using namespace std;
 
 #define F_PI ((float)M_PI)
 
-void prepareScene(void)
+void prepareView(void)
 {
   glm::vec3 camPos(0.0f, 0.0f, 100.0f);
   glm::vec3 camDir(0.0f, 0.0f, -1.0f);
@@ -61,7 +61,7 @@ void prepareScene(void)
   data_i[0] = Scene::size_w;
   data_i[1] = Scene::size_h;
 
-  OpenCL::writeBufferBlocking(framebufferqueue, fov_mem, 16*FLOAT_SIZE, data);
+  OpenCL::writeBufferBlocking(CLHelper::queue, CLHelper::fov_mem, 16*FLOAT_SIZE, data);
 }
 
 void scene(void)
@@ -82,9 +82,15 @@ int main(void)
     cout << "[Main] Started" << endl;
 
     string kernel("./cl/ray_frag.cl");
+    string cleaner("./cl/clearBuffers.cl");
     string image("png/out.png");
 
-    if(SDL::initSDL(1000, 1000) != 0)
+    unsigned int size_w = 1000;
+    unsigned int size_h = 1000;
+
+    uint32_t* frame_buffer = (uint32_t*)alloca(size_w*size_h*sizeof(uint32_t));
+
+    if(SDL::init(size_w, size_h) != 0)
     {
       cerr << "SDL initialization failed." << endl;
       return 1;
@@ -94,15 +100,19 @@ int main(void)
     {
       OpenCL ocl;
       ocl.init();
-
-      Scene::setup(1000, 1000, kernel, ocl);
+      CLHelper::init(size_w, size_h, kernel, cleaner, ocl);
+      Scene::init(size_w, size_h);
       Scene::printInfo();
 
-      prepareScene();
+      prepareView();
+      scene();
+      CLHelper::pushScene();
 
       while(!SDL::die)
       {
-        SDL::drawFrame(uint32_t *pixels);
+        OpenCL::readBufferBlocking(CLHelper::queue, CLHelper::frameBuf_mem,
+          size_w*size_h*sizeof(uint32_t), frame_buffer);
+        SDL::drawFrame(frame_buffer);
       }
     }
     catch(OpenCLException& e)
@@ -110,7 +120,7 @@ int main(void)
       e.print();
     }
 
-    SDL::closeSDL();
+    SDL::close();
     return 0;
 }
 

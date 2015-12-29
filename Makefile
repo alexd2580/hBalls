@@ -49,13 +49,13 @@ CXXFLAGS     = -std=c++11
 # Linker flags
 # -----------------------------
 
-LIBS = m OpenCL png
+LIBS = m OpenCL png SDL2
 
 # -----------------------------
 # Some automatic stuff
 # -----------------------------
 
-LFLAGS = $(foreach lib,$(LIBS),-l$(lib)) `sdl-config --cflags --libs`
+LFLAGS = $(foreach lib,$(LIBS),-l$(lib))
 
 CSRCFILES := $(wildcard ./src/*.c) $(wildcard ./src/*/*.c)
 COBJFILES := $(patsubst %.c,%.o,$(CSRCFILES))
