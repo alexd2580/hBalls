@@ -12,243 +12,120 @@ abstime.tv_sec += cooldown;
 pthread_cond_timedwait(&notifier, &mutex, &abstime);*/
 
 #include"raycg.hpp"
+#include"cl_ocgl.hpp"
+#include"sdl.hpp"
 
 using namespace std;
 
 #define F_PI ((float)M_PI)
 
-void qube(float size)
+void prepareScene(void)
 {
-    float s = size/2.0f;
-    set_mode(QUAD);
-        //BACK
-    vertexf(s, s, -s);
-    vertexf(s, -s, -s);
-    vertexf(-s, -s, -s);
-    vertexf(-s, s, -s);
-    //FRONT
-    vertexf(s, s, s);
-    vertexf(-s, s, s);
-    vertexf(-s, -s, s);
-    vertexf(s, -s, s);
-    //TOP
-    vertexf(s, s, s);
-    vertexf(s, s, -s);
-    vertexf(-s, s, -s);
-    vertexf(-s, s, s);
-    //BOTTOM
-    vertexf(s, -s, s);
-    vertexf(-s, -s, s);
-    vertexf(-s, -s, -s);
-    vertexf(s, -s, -s);
-    //LEFT
-    vertexf(-s, s, s);
-    vertexf(-s, s, -s);
-    vertexf(-s, -s, -s);
-    vertexf(-s, -s, s);
-    //RIGHT
-    vertexf(s, s, s);
-    vertexf(s, -s, s);
-    vertexf(s, -s, -s);
-    vertexf(s, s, -s);
+  glm::vec3 camPos(0.0f, 0.0f, 100.0f);
+  glm::vec3 camDir(0.0f, 0.0f, -1.0f);
+  glm::vec3 camUp(0.0f, 1.0f, 0.0f);
+
+  float fov = F_PI/2.0f;
+
+  camDir = glm::normalize(camDir);
+  camUp = glm::normalize(camUp);
+  glm::vec3 camLeft = glm::cross(camUp, camDir);
+  camUp = glm::cross(camDir, camLeft);
+
+  /*
+  fov should be an array of floats:
+  fovy, aspect,
+  posx, posy, posz,
+  dirx, diry, dirz,
+  upx, upy, upz,
+  -- add leftx, lefty, leftz,
+  size_x, size_y <-- IT'S TWO INTS!!
+  */
+  float data[16];
+  data[0] = fov;
+  data[1] = float(Scene::size_w) / float(Scene::size_h);
+  data[2] = camPos.x;
+  data[3] = camPos.y;
+  data[4] = camPos.z;
+  data[5] = camDir.x;
+  data[6] = camDir.y;
+  data[7] = camDir.z;
+  data[8] = camUp.x;
+  data[9] = camUp.y;
+  data[10] = camUp.z;
+  data[11] = camLeft.x;
+  data[12] = camLeft.y;
+  data[13] = camLeft.z;
+
+  int* data_i = (int*)(data+14);
+  data_i[0] = Scene::size_w;
+  data_i[1] = Scene::size_h;
+
+  OpenCL::writeBufferBlocking(framebufferqueue, fov_mem, 16*FLOAT_SIZE, data);
 }
 
-void renderFloor(void)
+void scene(void)
 {
-    for(int i=-10; i<10; i++)
-    {
-        for(int j=-10+(i+110)%2; j<10; j+=2)
-        {
-            push_matrix();
-            translatef(float(i)*10.0f, 0.0f, float(j)*10.0f);
-            set_mode(QUAD);
-            vertexf(0.0f, 0.0f, 0.0f);
-            vertexf(0.0f, 0.0f, 10.0f);
-            vertexf(10.0f, 0.0f, 10.0f);
-            vertexf(10.0f, 0.0f, 0.0f);
-            pop_matrix();
-        }
-    }
+  cout << "[Main] Queueing models" << endl;
+  Scene::colori(000);
+  Scene::materiali(MATT);
+  Scene::set_mode(QUAD);
+  Scene::vertexf(-20.0, -20.0, 0.0);
+  Scene::vertexf(20.0, -20.0, 0.0);
+  Scene::vertexf(20.0, 20.0, 0.0);
+  Scene::vertexf(-20.0, 20.0, 0.0);
 }
 
-void renderWall(void)
-{
-  set_mode(QUAD);
-  vertexf(-100.0f, 200.0f, 0.0f);
-  vertexf(-100.0f, 0.0f, 0.0f);
-  vertexf(100.0f, 0.0f, 0.0f);
-  vertexf(100.0f, 200.0f, 0.0f);
-}
-
-void renderWalls(void)
-{
-  push_matrix();
-  translatef(0.0, 0.0, -95.0);
-  rotatef(0.0, 0.0, 1.0, 0.0);
-  renderWall();
-  pop_matrix();
-  push_matrix();
-  translatef(-95.0, 0.0, 0.0);
-  rotatef(F_PI/2.0f, 0.0f, 1.0f, 0.0f);
-  renderWall();
-  pop_matrix();
-  push_matrix();
-  translatef(0.0, 0.0, 95.0);
-  rotatef(F_PI, 0.0f, 1.0f, 0.0f);
-  renderWall();
-  pop_matrix();
-  push_matrix();
-  translatef(95.0, 0.0, 0.0);
-  rotatef(-F_PI/2.0f, 0.0f, 1.0f, 0.0f);
-  renderWall();
-  pop_matrix();
-}
-
-int main2(void)
-{
-    string kernel("./cl/ray_frag.cl");
-    string image("png/out.png");
-
-    //setup(800, 600, "./ray_marcher.cl");
-    //setup(4096, 4096);
-    OpenCL ocl;
-    setup(1000, 1000, kernel, ocl);
-    printInfo();
-    cout << "Defining scene" << endl;
-
-    /*
-    fov should be an array of floats:
-    fovy, aspect,
-    posx, posy, posz,
-    dirx, diry, dirz,
-    upx, upy, upz,
-    */
-
-    float camPos[] = {
-        75.0f, 75.0f, 75.0f,
-        -1.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f
-        };
-
-    setPerspective(F_PI/2.0f, camPos);
-    //rotatef(-PIE/5.0f, 0.0f, 1.0f, 0.0f);
-
-    cout << "Start..." << endl;
-    cout << "Queueing models" << endl;
-
-    colori(200);
-    materiali(MATT);
-    renderFloor();
-
-    colori(200);
-    materiali(METALLIC);
-    set_mode(QUAD);
-    vertexf(-100.0f, 0.0f, -100.0f);
-    vertexf(100.0f, 0.0f, -100.0f);
-    vertexf(100.0f, 100.0f, -100.0f);
-    vertexf(-100.0f, 100.0f, -100.0f);
-
-    vertexf(100.0f, 0.0f, 100.0f);
-    vertexf(-100.0f, 0.0f, 100.0f);
-    vertexf(-100.0f, 100.0f, 100.0f);
-    vertexf(100.0f, 100.0f, 100.0f);
-
-    vertexf(-100.0f, 0.0f, 100.0f);
-    vertexf(-100.0f, 0.0f, -100.0f);
-    vertexf(-100.0f, 100.0f, -100.0f);
-    vertexf(-100.0f, 100.0f, 100.0f);
-
-    vertexf(100.0f, 0.0f, -100.0f);
-    vertexf(100.0f, 0.0f, 100.0f);
-    vertexf(100.0f, 100.0f, 100.0f);
-    vertexf(100.0f, 100.0f, -100.0f);
-
-    vertexf(-100.0f, 100.0f, 100.0f);
-    vertexf(-100.0f, 100.0f, -100.0f);
-    vertexf(100.0f, 100.0f, -100.0f);
-    vertexf(100.0f, 100.0f, 100.0f);
-
-    colori(200);
-    materiali(MIRROR);
-
-    push_matrix();
-    rotatef(-F_PI/3.0f, 0.0f, 1.0f, 0.0f);
-
-    glm::vec3 a(-20.0, 0.0, 0.0);
-    glm::vec3 b(20.0, 0.0, 0.0);
-    glm::vec3 c(0.0, 0.0, -10.0*sqrt(12.0));
-    glm::vec3 d(0.0, 0.0, 0.0);
-    glm::vec3 x = a + b + c;
-
-    x /= 3.0;
-    d.x = x.x;
-    d.z = x.z;
-
-    //set center to x|y=20;
-    translatef(-x.x, 20.0f, -x.z);
-
-    x -= a;
-    float h = glm::length(x);
-    h = (float)sqrt((2.0f*20.0f)*(2.0f*20.0f) - h*h);
-    d.y = h;
-
-    set_mode(SPHERE);
-    spherev(a, 20);
-    spherev(b, 20);
-    spherev(c, 20);
-    spherev(d, 20);
-
-    pop_matrix();
-
-    cout << "Rendering" << endl;
-
-    printScreen(image, ocl);
-
-    cout << "Closing" << endl;
-
-    return 0;
-}
-
-#include<ctime>
 
 int main(void)
 {
-    setvbuf(stdout, nullptr, _IONBF, 0);
+    cout << "[Main] Started" << endl;
 
     string kernel("./cl/ray_frag.cl");
     string image("png/out.png");
 
-    OpenCL ocl;
-    setup(10, 10, kernel, ocl);
-    printInfo();
+    if(SDL::initSDL(1000, 1000) != 0)
+    {
+      cerr << "SDL initialization failed." << endl;
+      return 1;
+    }
 
-    float camPos[] = {
-        0.0f, 100.0f, 0.0f,
-        0.0f, -1.0f, 0.0f,
-        0.0f, 0.0f, 1.0f
-        };
+    try
+    {
+      OpenCL ocl;
+      ocl.init();
 
-    setPerspective(F_PI/2.0f, camPos);
+      Scene::setup(1000, 1000, kernel, ocl);
+      Scene::printInfo();
 
-    cout << "Queueing models" << endl;
+      prepareScene();
+
+      while(!SDL::die)
+      {
+        SDL::drawFrame(uint32_t *pixels);
+      }
+    }
+    catch(OpenCLException& e)
+    {
+      e.print();
+    }
+
+    SDL::closeSDL();
+    return 0;
+}
+
+    /*
+    renderWalls();
     colori(200);
-    materiali(MATT);
+    materiali(MIRROR);
 
-    /*set_mode(QUAD);
-    vertexf(-50.0, 0.0, 0.0);
-    vertexf(50.0, 0.0, 0.0);
-    vertexf(50.0, 0.0, -100.0);
-    vertexf(-50.0, 0.0, -100.0);*/
 
     set_mode(SPHERE);
-    spheref(0.0f,0.0f,0.0f,50.0f);
+    spheref(0.0f,0.0f,0.0f,50.0f);*/
 
     /*materiali(MATT);
     renderFloor();
     materiali(MIRROR);
-    renderWalls();*/
-
-/*
 
     begin(POLYGON);
         vertexf(100.0f, 0.0f, 100.0f);
@@ -325,7 +202,197 @@ int main(void)
     end();
     pop_matrix();*/
 
-    cout << "Rendering" << endl;
-    printScreen(image, ocl);
-    return 0;
-}
+/*
+    void qube(float size)
+    {
+        float s = size/2.0f;
+        set_mode(QUAD);
+            //BACK
+        vertexf(s, s, -s);
+        vertexf(s, -s, -s);
+        vertexf(-s, -s, -s);
+        vertexf(-s, s, -s);
+        //FRONT
+        vertexf(s, s, s);
+        vertexf(-s, s, s);
+        vertexf(-s, -s, s);
+        vertexf(s, -s, s);
+        //TOP
+        vertexf(s, s, s);
+        vertexf(s, s, -s);
+        vertexf(-s, s, -s);
+        vertexf(-s, s, s);
+        //BOTTOM
+        vertexf(s, -s, s);
+        vertexf(-s, -s, s);
+        vertexf(-s, -s, -s);
+        vertexf(s, -s, -s);
+        //LEFT
+        vertexf(-s, s, s);
+        vertexf(-s, s, -s);
+        vertexf(-s, -s, -s);
+        vertexf(-s, -s, s);
+        //RIGHT
+        vertexf(s, s, s);
+        vertexf(s, -s, s);
+        vertexf(s, -s, -s);
+        vertexf(s, s, -s);
+    }
+
+    void renderFloor(void)
+    {
+        for(int i=-10; i<10; i++)
+        {
+            for(int j=-10+(i+110)%2; j<10; j+=2)
+            {
+                push_matrix();
+                translatef(float(i)*10.0f, 0.0f, float(j)*10.0f);
+                set_mode(QUAD);
+                vertexf(0.0f, 0.0f, 0.0f);
+                vertexf(0.0f, 0.0f, 10.0f);
+                vertexf(10.0f, 0.0f, 10.0f);
+                vertexf(10.0f, 0.0f, 0.0f);
+                pop_matrix();
+            }
+        }
+    }
+
+    void renderWall(void)
+    {
+      set_mode(QUAD);
+      vertexf(-100.0f, 200.0f, 0.0f);
+      vertexf(-100.0f, 0.0f, 0.0f);
+      vertexf(100.0f, 0.0f, 0.0f);
+      vertexf(100.0f, 200.0f, 0.0f);
+    }
+
+    void renderWalls(void)
+    {
+      push_matrix();
+      translatef(0.0, 0.0, -95.0);
+      rotatef(0.0, 0.0, 1.0, 0.0);
+      renderWall();
+      pop_matrix();
+      push_matrix();
+      translatef(-95.0, 0.0, 0.0);
+      rotatef(F_PI/2.0f, 0.0f, 1.0f, 0.0f);
+      renderWall();
+      pop_matrix();
+      push_matrix();
+      translatef(0.0, 0.0, 95.0);
+      rotatef(F_PI, 0.0f, 1.0f, 0.0f);
+      renderWall();
+      pop_matrix();
+      push_matrix();
+      translatef(95.0, 0.0, 0.0);
+      rotatef(-F_PI/2.0f, 0.0f, 1.0f, 0.0f);
+      renderWall();
+      pop_matrix();
+    }
+
+
+    int main2(void)
+    {
+        string kernel("./cl/ray_frag.cl");
+        string image("png/out.png");
+
+        //setup(800, 600, "./ray_marcher.cl");
+        //setup(4096, 4096);
+        OpenCL ocl;
+        setup(1000, 1000, kernel, ocl);
+        printInfo();
+        cout << "Defining scene" << endl;
+*/
+        /*
+        fov should be an array of floats:
+        fovy, aspect,
+        posx, posy, posz,
+        dirx, diry, dirz,
+        upx, upy, upz,
+        */
+/*
+        float camPos[] = {
+            75.0f, 75.0f, 75.0f,
+            -1.0f, 0.0f, 0.0f,
+            0.0f, 1.0f, 0.0f
+            };
+
+        setPerspective(F_PI/2.0f, camPos);
+        //rotatef(-PIE/5.0f, 0.0f, 1.0f, 0.0f);
+
+        cout << "Start..." << endl;
+        cout << "Queueing models" << endl;
+
+        colori(200);
+        materiali(MATT);
+        renderFloor();
+
+        colori(200);
+        materiali(METALLIC);
+        set_mode(QUAD);
+        vertexf(-100.0f, 0.0f, -100.0f);
+        vertexf(100.0f, 0.0f, -100.0f);
+        vertexf(100.0f, 100.0f, -100.0f);
+        vertexf(-100.0f, 100.0f, -100.0f);
+
+        vertexf(100.0f, 0.0f, 100.0f);
+        vertexf(-100.0f, 0.0f, 100.0f);
+        vertexf(-100.0f, 100.0f, 100.0f);
+        vertexf(100.0f, 100.0f, 100.0f);
+
+        vertexf(-100.0f, 0.0f, 100.0f);
+        vertexf(-100.0f, 0.0f, -100.0f);
+        vertexf(-100.0f, 100.0f, -100.0f);
+        vertexf(-100.0f, 100.0f, 100.0f);
+
+        vertexf(100.0f, 0.0f, -100.0f);
+        vertexf(100.0f, 0.0f, 100.0f);
+        vertexf(100.0f, 100.0f, 100.0f);
+        vertexf(100.0f, 100.0f, -100.0f);
+
+        vertexf(-100.0f, 100.0f, 100.0f);
+        vertexf(-100.0f, 100.0f, -100.0f);
+        vertexf(100.0f, 100.0f, -100.0f);
+        vertexf(100.0f, 100.0f, 100.0f);
+
+        colori(200);
+        materiali(MIRROR);
+
+        push_matrix();
+        rotatef(-F_PI/3.0f, 0.0f, 1.0f, 0.0f);
+
+        glm::vec3 a(-20.0, 0.0, 0.0);
+        glm::vec3 b(20.0, 0.0, 0.0);
+        glm::vec3 c(0.0, 0.0, -10.0*sqrt(12.0));
+        glm::vec3 d(0.0, 0.0, 0.0);
+        glm::vec3 x = a + b + c;
+
+        x /= 3.0;
+        d.x = x.x;
+        d.z = x.z;
+
+        //set center to x|y=20;
+        translatef(-x.x, 20.0f, -x.z);
+
+        x -= a;
+        float h = glm::length(x);
+        h = (float)sqrt((2.0f*20.0f)*(2.0f*20.0f) - h*h);
+        d.y = h;
+
+        set_mode(SPHERE);
+        spherev(a, 20);
+        spherev(b, 20);
+        spherev(c, 20);
+        spherev(d, 20);
+
+        pop_matrix();
+
+        cout << "Rendering" << endl;
+
+        printScreen(image, ocl);
+
+        cout << "Closing" << endl;
+
+        return 0;
+    }
+*/

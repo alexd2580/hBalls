@@ -7,6 +7,9 @@
 
 #include"cl_ocgl.hpp"
 
+namespace Scene
+{
+
 #define UINT8_T(x) ((uint8_t)x)
 
 // used by opencl kernel
@@ -31,6 +34,9 @@
 #define MIRROR 3
 #define GLASS 4
 
+unsigned int size_w;
+unsigned int size_h;
+
 void setup(unsigned int, unsigned int, std::string&, OpenCL& cl);
 
 void pop_matrix(void);
@@ -43,20 +49,6 @@ void put_matrix(glm::mat4& mat);
 void printInfo(void);
 
 //----------------------
-
-/*
-fov should be an array of floats:
-fovy, aspect,
-posx, posy, posz,
-dirx, diry, dirz,
-upx, upy, upz,
-size_x, size_y <-- IT'S TWO INTS!!
-*/
-void setPerspective(float fov, float* camPos);
-
-void clearBuffers(void);
-void clearRemoteBuffers(OpenCL&);
-void printScreen(std::string& fpath, OpenCL& cl);
 
 void rotatev(float angle, glm::vec3 rotv);
 void rotatef(float angle, float x, float y, float z);
@@ -74,4 +66,5 @@ void spheref(float x, float y, float z, float r);
 void colori(uint8_t c);
 void materiali(uint8_t c);
 
+}
 #endif

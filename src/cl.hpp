@@ -11,6 +11,16 @@ by remote i mean the GPU/CPU-internal memory
 and local is userspace
 */
 
+class OpenCLException
+{
+private:
+  cl_int error;
+  std::string message;
+public:
+  OpenCLException(cl_int err, std::string& msg);
+  virtual ~OpenCLException(void) {}
+  void print(void);
+};
 
 class OpenCL
 {
@@ -23,8 +33,6 @@ private:
   cl_context context;
 
   static cl_int error;
-  static void checkError(void);
-  static void checkError(std::string);
 
   #define print_platform_info(platform, param) \
     _print_platform_info(platform, param, #param)
@@ -38,11 +46,12 @@ private:
     _print_device_info<type>(device, param, #param)
   template<typename T> void _print_device_info(unsigned int device, cl_device_info type, std::string type_name);
 public:
+  OpenCL(void);
   /**
    * Inits platform ids
    * Inits device ids from platform 0
    */
-  OpenCL();
+  void init(void);
 
   /**
    * Frees platform ids

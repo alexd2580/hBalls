@@ -48,66 +48,54 @@ char isLit(global float* light, float3 pos)
     return 0;
 }
 
-/*void traceTriangle //this doesn't work... now it does! a LOT faster
+void traceTriangle
 (
     private float3 eyePos,
     private float3 eyeDir, //normalized
     global float* triangle,
     private float* depth,
-    private float* res
+    private float3 res[]
 )
 {
-    uchar n = 3;
-
     float3 a = (float3){triangle[0], triangle[1], triangle[2]};
-    float3 b;
+    float3 b = (float3){triangle[3], triangle[4], triangle[5]};
+    float3 c = (float3){triangle[6], triangle[7], triangle[8]};
     float3 toA = a - eyePos;
-    float3 toB;
+    float3 toB = b - eyePos;
+    float3 toC = c - eyePos;
+
     float3 crossV;
-    global float* tmp;
+    crossV = cross(toB, toA);
+    if(dot(eyeDir, crossV) < 0.0f)
+        return;
+    crossV = cross(toC, toB);
+    if(dot(eyeDir, crossV) < 0.0f)
+        return;
+    crossV = cross(toA, toC);
+    if(dot(eyeDir, crossV) < 0.0f)
+        return;
 
-    for(uchar i=1; i<n; i++)
-    {
-        tmp = triangle + i*vertex_size;
-        b = (float3){tmp[0], tmp[1], tmp[2]};
-        toB = b - eyePos;
-        crossV = cross(toB, toA);
-        if(dot(eyeDir, crossV) <= 0)
-            return; //point is outside, drop;
-        toA = toB;
-    }
+    float3 aToB = b - a;
+    float3 aToC = c - a;
+    float3 normal = normalize(cross(aToB, aToC));
 
-    toA = a - eyePos;
-    crossV = cross(toA, toB);
-    if(dot(eyeDir, crossV) <= 0)
-        return; //point is outside, drop;
+    float ortho_dist = dot(eyePos-a, normal);
+    float ortho_per_step = -dot(eyeDir, normal);
 
-    tmp = triangle + vertex_size;
-    float3 toC = (float3){tmp[0], tmp[1], tmp[2]} - a; //a to v1
-    toB = b - a; //a to vn
+    float dist = ortho_dist / ortho_per_step;
 
-    float3 normal = normalize(cross(toC, toB));
+    if(dist > *depth || dist <= 0.0f)
+      return; //there was a closer point before, drop;
 
-    float d = -dot(a, normal);
-    float t = -( dot(eyePos, normal) + d ) / dot(eyeDir, normal);
-
-    if(t > *depth || t <= 0)
-        return; //there was a closer point before, drop;
-
-    float3 planePos = eyePos + t * eyeDir;
+    float3 planePos = eyePos + dist * eyeDir;
 
     //--------------------
 
-    res[0] = planePos.x;
-    res[1] = planePos.y;
-    res[2] = planePos.z;
-    res[3] = normal.x;
-    res[4] = normal.y;
-    res[5] = normal.z;
-
-    *depth = t;
+    res[0] = planePos;
+    res[1] = normal;
+    *depth = dist;
     return;
-}*/
+}
 
 void traceSphere
 (
@@ -115,7 +103,7 @@ void traceSphere
     private float3 eyeDir, //normalized
     global float* sphere,
     private float* depth,
-    private float3* res
+    private float3 res[]
 )
 {
     float3 center = (float3){sphere[0], sphere[1], sphere[2]};
@@ -157,7 +145,7 @@ global uchar* runTraceObjects
     global float* objects,
     global int* offsets,
     private float* depth,
-    private float3* res
+    private float3 res[]
 )
 {
     private int offset;
@@ -181,7 +169,7 @@ global uchar* runTraceObjects
         switch(type)
         {
         case TRIANGLE: // +1 skip header
-            //traceTriangle(eyePos, eyeDir, object+1, depth, res);
+            traceTriangle(eyePos, eyeDir, object+1, depth, res);
             break;
         case SPHERE:
             traceSphere(eyePos, eyeDir, object+1, depth, res);
@@ -209,7 +197,7 @@ float traceObjects
     global uchar* objects,
     global int* offsets,
     private float* depth,
-    private float3* res
+    private float3 res[]
 )
 {
     global float* objects_f = (global float*)objects;
@@ -322,46 +310,51 @@ kernel void trace //main
     //------------------------------------------------------------------------//
 
     float3 toSun = (float3){ 0.0f, 1.0f, 0.0f };
-    if(depth >= depth + 10.0f) // depth = inf -> no collision
+
+    float ambient = 0.2f;
+    float diffuse = 0.0f;
+    float specular = 0.0f;
+
+    /** Sky (box) **/
+    if(depth >= depth + 10.0f)
     {
-        float amb = 0.2f;
-        float diff = 0.8f * clamp(dot(eyeDir, toSun), 0.0f, 1.0f);
-        frag *= amb+diff;
-        frag = 0.0;
+        diffuse = 0.8*clamp(dot(eyeDir, toSun), 0.0f, 1.0f);
     }
-    else // depth < inf
+    /** Some Object **/
+    else
     {
         float3 pos = res[0];
         float3 normal = res[1];
 
-        float amb = 0.2f;
-        float diff = 0.0f;
-
         float cos_t = dot(normal, toSun);
-        if(cos_t > -0.001)
+        /** On sun side of Object **/
+        if(cos_t > -0.001f)
         {
           float depthL = 1.0f/0.0f;
-          /*traceObjects( //TODO REENABLE
+          traceObjects(
             pos + 0.0001f*normal,
             toSun,
             objects,
             offsets,
             &depthL,
             res
-            );*/
-          if(depthL >= depthL + 10.0f) //no object blocking
+            );
+          /** Lit by sun **/
+          if(depthL >= depthL + 10.0f)
           {
-            diff = 0.8f * clamp(cos_t, 0.0f, 1.0f);
-            printf("LIT\n");
+            diffuse = 0.8f * clamp(cos_t, 0.0f, 1.0f);
+            float shininess = 100.0f;
+            /** Sun reflection on surface **/
+            float3 reflected = reflect(-toSun, normal);
+            float3 posToEye = normalize(eyePos - pos);
+            float coincidence = max(0.0f, dot(reflected,posToEye));
+            specular = clamp(pow(coincidence, shininess), 0.0f, 1.0f);
           }
         }
-        printf("HIT: %f\t%f\t%f\n", frag, cos_t, diff);
 
-        frag *= amb+diff;
     }
-
+    frag = clamp(frag*(ambient+diffuse)+specular, 0.0f, 1.0f);
     frameBuf[id] = (uchar)floor(255.1f*frag);
-    printf("ANY: %d %d %d => %f\t%f %f %f\n", pos_x, pos_y, id, frag, eyeDir.x, eyeDir.y, eyeDir.z);
     depthBuf[id] = depth;
     return;
 }

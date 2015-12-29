@@ -55,7 +55,7 @@ LIBS = m OpenCL png
 # Some automatic stuff
 # -----------------------------
 
-LFLAGS = $(foreach lib,$(LIBS),-l$(lib))
+LFLAGS = $(foreach lib,$(LIBS),-l$(lib)) `sdl-config --cflags --libs`
 
 CSRCFILES := $(wildcard ./src/*.c) $(wildcard ./src/*/*.c)
 COBJFILES := $(patsubst %.c,%.o,$(CSRCFILES))

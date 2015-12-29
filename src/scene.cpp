@@ -18,6 +18,9 @@
 
 using namespace std;
 
+namespace Scene
+{
+
 #define MAX_PRIMITIVES 1000
 
 /* SCREEN SIZES */
@@ -182,44 +185,6 @@ void setup(unsigned int w, unsigned int h, string& tracepath, OpenCL& cl)
     push_matrix();
     clearBuffers();
     clearRemoteBuffers(cl);
-}
-
-void setPerspective(float fov, float* camPos)
-{
-/*
-fov should be an array of floats:
-fovy, aspect,
-posx, posy, posz,
-dirx, diry, dirz,
-upx, upy, upz,
--- add leftx, lefty, leftz,
-size_x, size_y <-- IT'S TWO INTS!!
-*/
-    float dataCpy[16];
-    dataCpy[0] = fov;
-    dataCpy[1] = (float)size_w/(float)size_h;
-    memcpy(dataCpy+2, camPos, 3*FLOAT_SIZE); //pos
-    glm::vec3 dir(camPos[3], camPos[4], camPos[5]);
-    glm::vec3 up(camPos[6], camPos[7], camPos[8]);
-    dir = normalize(dir);
-    up = normalize(up);
-    glm::vec3 left = glm::cross(up, dir);
-    up = cross(dir, left);
-
-    dataCpy[5] = dir.x;
-    dataCpy[6] = dir.y;
-    dataCpy[7] = dir.z;
-    dataCpy[8] = up.x;
-    dataCpy[9] = up.y;
-    dataCpy[10] = up.z;
-    dataCpy[11] = left.x;
-    dataCpy[12] = left.y;
-    dataCpy[13] = left.z;
-
-    int* data_i = (int*)(dataCpy+14);
-    data_i[0] = size_w;
-    data_i[1] = size_h;
-    OpenCL::writeBufferBlocking(framebufferqueue, fov_mem, 14*FLOAT_SIZE+2*INT_SIZE, dataCpy);
 }
 
 void flushRTBuffer(OpenCL& cl)
@@ -539,21 +504,4 @@ void spheref(float x, float y, float z, float r)
   spherev(glm::vec3(x, y, z), r);
 }
 
-
-/*
-bool end(void)
-{
-    size_t size = objectByteSize();
-
-    bool max_index_reached = queuePos_r >= MAX_PRIMITIVES;
-    bool no_space_left = size+freeOffset_r >= MAX_PRIMITIVES*20*FLOAT_SIZE;
-
-    if(no_space_left || max_index_reached)
-    {
-        buffer_full = true;
-        return false;
-    }
-
-    push_object();
-    return true;
-}*/
+}
