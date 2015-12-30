@@ -21,8 +21,8 @@ using namespace std;
 
 void prepareView(void)
 {
-  glm::vec3 camPos(50.0f, 50.0f, 50.0f);
-  glm::vec3 camDir(-1.0f, -1.0f, -1.0f);
+  glm::vec3 camPos(-6.6f, 50.0f, 66.6f);
+  glm::vec3 camDir(6.6f, -50.f, -66.6f);
   glm::vec3 camUp(0.0f, 1.0f, 0.0f);
 
   float fov = F_PI/2.0f;
@@ -80,21 +80,7 @@ void scene(void)
 
   Scene::push_matrix();
 
-  glm::vec3 a(-20.0, 0.0, 0.0);
-  glm::vec3 b(20.0, 0.0, 0.0);
-  glm::vec3 c(0.0, 0.0, -10.0*sqrt(12.0));
-  glm::vec3 d(0.0, 0.0, 0.0);
-
-  glm::vec3 x = c / 3.0f;
-  d.z = x.z;
-
-  //set center to x|y=20;
-  Scene::translatef(-x.x, 20.0f, -x.z);
-
-  x -= a;
-  float h = glm::length(x);
-  h = (float)sqrt((2.0f*20.0f)*(2.0f*20.0f) - h*h);
-  d.y = h;
+  glm::vec3 a(40.0, 0.0, 0.0);
 
   Scene::sphere(
     DIFFUSE,
@@ -104,40 +90,60 @@ void scene(void)
     20.0f
   );
 
+  Scene::rotatef(2.0f*F_PI/3.0f, 0.0f, 1.0f, 0.0f);
+
   Scene::sphere(
     DIFFUSE,
     glm::vec3(0.0f, 1.0f, 0.0f),
     glm::vec3(0.0f, 0.0f, 0.0f),
-    b,
+    a,
     20.0f
   );
+
+  Scene::rotatef(2.0f*F_PI/3.0f, 0.0f, 1.0f, 0.0f);
 
   Scene::sphere(
     DIFFUSE,
     glm::vec3(1.0f, 0.0f, 0.0f),
     glm::vec3(0.0f, 0.0f, 0.0f),
-    c,
+    a,
     20.0f
+  );
+
+  Scene::sphere(
+    METALLIC,
+    glm::vec3(1.0f, 1.0f, 1.0f),
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    15.0f
   );
 
   Scene::sphere(
     DIFFUSE,
     glm::vec3(1.0f, 1.0f, 1.0f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    d,
-    20.0f
+    glm::vec3(1.0f, 1.0f, 1.0f),
+    glm::vec3(0.0f, 7000.0f, 0.0f),
+    5000.0f
   );
 
   Scene::pop_matrix();
 
+  Scene::sphere(
+    MIRROR,
+    glm::vec3(1.0f, 1.0f, 1.0f),
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    glm::vec3(600.0f, 100.0f, -1000.0f),
+    1100.0f
+  );
+
   Scene::quad(
     DIFFUSE,
-    glm::vec3(1.0f, 1.0f, 1.0f),
     glm::vec3(0.5f, 0.5f, 0.5f),
-    glm::vec3(-10000.0, -100.0, -10000.0),
-    glm::vec3(-10000.0, -100.0, 10000.0),
-    glm::vec3(10000.0, -100.0, 10000.0),
-    glm::vec3(10000.0, -100.0, -10000.0)
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    glm::vec3(-10000.0, -20.0, -10000.0),
+    glm::vec3(-10000.0, -20.0, 10000.0),
+    glm::vec3(10000.0, -20.0, 10000.0),
+    glm::vec3(10000.0, -20.0, -10000.0)
   );
 }
 

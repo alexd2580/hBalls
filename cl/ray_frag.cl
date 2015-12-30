@@ -26,6 +26,34 @@ triangle -> 16*4 byte
 #define MIRROR 3
 #define GLASS 4
 
+/***  UTIL  ***/
+
+/**
+ * Returns a vector orthogonal to a given vector in 3D space.
+ * @param v The vector to find an orthogonal vector for
+ * @return A vector orthogonal to the given vector
+ */
+inline float3 ortho(const float3 v)
+{
+    // Awesome branchless function for finding an orthogonal vector in 3D space by
+    // http://lolengine.net/blog/2013/09/21/picking-orthogonal-vector-combing-coconuts
+    //
+    // Their "boring" branching is commented here for completeness:
+    // return glm::abs(v.x) > glm::abs(v.z) ? glm::vec3(-v.y, v.x, 0.0) : glm::vec3(0.0, -v.z, v.y);
+
+    float m;
+    float k = fract(fabs(v.x) + 0.5f, &m);
+    return (float3){ -v.y, v.x - k * v.z, k * v.y };
+}
+
+float3 reflect(float3 source, float3 normal)
+{
+    float3 axis = normalize(normal);
+    float3 ax_dir = axis * dot(source, axis);
+    return(source - 2*ax_dir);
+}
+
+/**** UTILS ****/
 /*** RANDOM ***/
 
 typedef struct PRNG {
@@ -87,47 +115,25 @@ inline float3 oriented_uniform_sample_hemisphere(global PRNG *prng, float3 dir)
  * @param angle When a full hemisphere is desired, use pi/2. 0 equals perfect reflection. The value
  * should therefore be between 0 and pi/2. This angle is equal to half the cone width.
  * @return A random point on the surface of a sphere
- *//*
-inline glm::vec3 sample_hemisphere(glm::vec3 dir, float power, float angle) {
+ */
+inline float3 sample_hemisphere(global PRNG* prng, float3 dir, float power, float angle)
+{
     // Code by Mikael Hvidtfeldt Christensen
     // from http://blog.hvidtfeldts.net/index.php/2015/01/path-tracing-3d-fractals/
     // Thanks!
 
-    glm::vec3 o1 = glm::normalize(ortho(dir));
-    glm::vec3 o2 = glm::normalize(glm::cross(dir, o1));
-    glm::vec2 r = glm::vec2{rand_range(0.f, 1.f), rand_range(glm::cos(angle), 1.f)};
-    r.x = r.x * glm::two_pi<float>();
-    r.y = glm::pow(r.y, 1.f / (power + 1.f));
-    float oneminus = glm::sqrt(1.f - r.y * r.y);
-    return glm::cos(r.x) * oneminus * o1 + glm::sin(r.x) * oneminus * o2 + r.y * dir;
-}*/
+    float3 o1 = normalize(ortho(dir));
+    float3 o2 = normalize(cross(dir, o1));
+    float rx = rand_range(prng, 0.0f, 1.0f);
+    float ry = rand_range(prng, cos(angle), 1.0f);
+    rx *= 3.1415f*2.0f;
+    ry = pow(ry, 1.0f / (power + 1.0f));
+    float oneminus = sqrt(1.0f - ry * ry);
+    return cos(rx) * oneminus * o1 + sin(rx) * oneminus * o2 + ry * dir;
+}
 
 /*** RANDOM ***/
-/***  UTIL  ***/
-
-/**
- * Returns a vector orthogonal to a given vector in 3D space.
- * @param v The vector to find an orthogonal vector for
- * @return A vector orthogonal to the given vector
- */
-inline float3 ortho(const float3 v)
-{
-    // Awesome branchless function for finding an orthogonal vector in 3D space by
-    // http://lolengine.net/blog/2013/09/21/picking-orthogonal-vector-combing-coconuts
-    //
-    // Their "boring" branching is commented here for completeness:
-    // return glm::abs(v.x) > glm::abs(v.z) ? glm::vec3(-v.y, v.x, 0.0) : glm::vec3(0.0, -v.z, v.y);
-
-    float k = fract(fabs(v.x) + 0.5f, (global float*)0);
-    return (float3){ -v.y, v.x - k * v.z, k * v.y };
-}
-
-float3 reflect(float3 source, float3 normal)
-{
-    float3 axis = normalize(normal);
-    float3 ax_dir = axis * dot(source, axis);
-    return(source - 2*ax_dir);
-}
+/**** MAIN  ****/
 
 void traceTriangle
 (
@@ -297,29 +303,29 @@ float3 traceObjects
         pos = res[0];
         normal = res[1];
 
+        frag += active * brdf;
+
         switch(material)
         {
         case DIFFUSE:
-        default:
             eyePos = pos;
             eyeDir = oriented_uniform_sample_hemisphere(prng, normal);
-            break;
-        /*case METALLIC:
-            eyePos = pos;
-            eyeDir = reflect(eyeDir, normal);
+            brdf *= 2.0f * passive * dot(normal, eyeDir);
             break;
         case MIRROR:
             eyePos = pos;
             eyeDir = reflect(eyeDir, normal);
             break;
-        case GLASS:
+        case METALLIC:
+            eyePos = pos;
+            eyeDir = reflect(eyeDir, normal);
+            eyeDir = sample_hemisphere(prng, eyeDir, 1.f, 1.f);
+            break;
+        /*case GLASS:
             break;
         default:
             break;*/
         }
-
-        frag += active * brdf;
-        brdf *= 2.0f * passive * dot(normal, eyeDir);
 
         private float dth = 1.0f/0.0f; //reset
         closest = runTraceObjects(eyePos, eyeDir, objects, res);

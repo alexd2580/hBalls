@@ -183,7 +183,7 @@ glm::vec3 performModelTransform(glm::vec3 a)
 
 //---------------------------------------
 
-void push_vec3(glm::vec3& v)
+void push_vec3(glm::vec3 v)
 {
   objects_buffer_i[0] = v.x;
   objects_buffer_i[1] = v.y;
@@ -219,9 +219,9 @@ void triangle
 )
 {
   push_header(TRIANGLE, material, passive, active);
-  push_vec3(a);
-  push_vec3(b);
-  push_vec3(c);
+  push_vec3(performModelTransform(a));
+  push_vec3(performModelTransform(b));
+  push_vec3(performModelTransform(c));
 }
 
 void sphere
@@ -234,7 +234,7 @@ void sphere
 )
 {
   push_header(SPHERE, material, passive, active);
-  push_vec3(pos);
+  push_vec3(performModelTransform(pos));
   *objects_buffer_i = radius;
   objects_buffer_i++;
 }
@@ -251,13 +251,13 @@ void quad
 )
 {
   push_header(TRIANGLE, material, passive, active);
-  push_vec3(a);
-  push_vec3(b);
-  push_vec3(c);
+  push_vec3(performModelTransform(a));
+  push_vec3(performModelTransform(b));
+  push_vec3(performModelTransform(c));
   push_header(TRIANGLE, material, passive, active);
-  push_vec3(a);
-  push_vec3(c);
-  push_vec3(d);
+  push_vec3(performModelTransform(a));
+  push_vec3(performModelTransform(c));
+  push_vec3(performModelTransform(d));
 }
 
 /*
