@@ -14,8 +14,7 @@ namespace CLHelper
    * Buffers on GPU
    */
   extern cl_mem /*float*/ fov_mem;
-  extern cl_mem /*char */ objects_mem;
-  extern cl_mem /*int  */ offsets_mem;
+  extern cl_mem /*float*/ objects_mem;
   extern cl_mem /*char */ frameBuf_mem;
   extern cl_mem /*float*/ depthBuf_mem;
 
@@ -32,6 +31,7 @@ namespace CLHelper
     std::string& cleanpath,
     OpenCL& cl
   );
+  void close(void);
   void pushScene(void);
   void render(OpenCL&);
 

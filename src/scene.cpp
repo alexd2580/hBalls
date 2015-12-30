@@ -34,27 +34,15 @@ int view_max_y;
  * Local Buffers
  */
 uint8_t*        frame_buffer;
-uint32_t*       objects_buffer; //data items MUST be aligned! max(type T) = 4byte
-int32_t*        offsets_buffer;
-bool            buffer_full;
 
-unsigned int  queuePos_r;
-unsigned int  freeOffset_r;
-
-
+float*          objects_buffer_start; //data items MUST be aligned! max(type T) = 4byte
+float*          objects_buffer_i;
+float*          objects_buffer_end;
 
 /**
  * Matrix stack for model matrix
  */
 stack<glm::mat4> model_s;
-
-void clearBuffers(void)
-{
-  //for(int i=0; i<size_y*size_x; i++)
-  //    frameBuffer[i] = ' '; i don't need to clear framebuf, cleared on rewrite
-  for(int i=0; i<1000; i++)
-  offsets_buffer[i] = -1;
-}
 
 /**
  * Pop a model matrix
@@ -112,7 +100,7 @@ __attribute__((pure)) glm::mat4 get_matrix(void)
  */
 
 typedef struct interleave_ interleave;
-struct interleave_
+struct interleave_ // TODO what is this?
 {
     glm::vec3 pos;
     float color;
@@ -138,14 +126,16 @@ void init(unsigned int w, unsigned int h)
     view_max_y = size_h/2;
 
     frame_buffer  = (uint8_t*)        malloc(size_h*size_w*sizeof(uint8_t));
-    objects_buffer = (uint32_t*)      malloc(MAX_PRIMITIVES*10*FLOAT_SIZE);
-    offsets_buffer = (int32_t*)       malloc(MAX_PRIMITIVES*INT_SIZE);
-
-    queuePos_r = 0;
-    freeOffset_r = 0;
+    objects_buffer_start = (float*)   malloc(MAX_PRIMITIVES*16*FLOAT_SIZE);
+    objects_buffer_i = objects_buffer_start;
+    objects_buffer_end = objects_buffer_start + MAX_PRIMITIVES*16*FLOAT_SIZE;
 
     push_matrix();
-    clearBuffers();
+}
+
+void clearBuffers(void)
+{
+  objects_buffer_i = objects_buffer_start;
 }
 
 /*#include"pngwrapper.hpp"
@@ -193,137 +183,84 @@ glm::vec3 performModelTransform(glm::vec3 a)
 
 //---------------------------------------
 
-glm::vec3 c_triangle[3];
-
-struct
+void push_vec3(glm::vec3& v)
 {
-    glm::vec3 pos;
-    float r;
-} c_sphere;
-
-struct
-{
-    uint8_t type;
-    uint8_t material;
-    uint8_t color;
-} c_object;
-
-__attribute__((pure)) size_t objectByteSize(void)
-{
-    size_t size = 0;
-    size += FLOAT_SIZE; //3*sizeof(uint8_t);
-    switch(c_object.type)
-    {
-    case TRIANGLE:
-        size += 3 * 3*FLOAT_SIZE;
-        break;
-    case SPHERE:
-        size += 3*FLOAT_SIZE; //pos
-        size += FLOAT_SIZE; //radius
-        break;
-    default:
-      break;
-    }
-    return size;
-}
-
-/**
- * Copies the polygon to the queue, moving the queue* to the next free byte
- */
-float* push_triangle(float* queue_f)
-{
-    for(int i=0; i<3; i++)
-    {
-      queue_f[0] = c_triangle[i].x;
-      queue_f[1] = c_triangle[i].y;
-      queue_f[2] = c_triangle[i].z;
-      queue_f += 3;
-    }
-    return queue_f;
-}
-
-/**
- * Copies the sphere to the queue, moving the queue* to the next free byte
- */
-float* push_sphere(float* queue_f)
-{
-    queue_f[0] = c_sphere.pos.x;
-    queue_f[1] = c_sphere.pos.y;
-    queue_f[2] = c_sphere.pos.z;
-    queue_f[3] = c_sphere.r;
-    return queue_f+4;
+  objects_buffer_i[0] = v.x;
+  objects_buffer_i[1] = v.y;
+  objects_buffer_i[2] = v.z;
+  objects_buffer_i += 3;
 }
 
 // Pushes the object to the objects_buffer at byte index freeOffset_r
-void push_object(void)
+void push_header
+(
+  uint8_t type,
+  uint8_t material,
+  glm::vec3 passive,
+  glm::vec3 active
+)
 {
-    offsets_buffer[queuePos_r] = freeOffset_r;
-    uint8_t* thisObj_u = (uint8_t*)(objects_buffer+freeOffset_r);
-    thisObj_u[0] = c_object.type;
-    thisObj_u[1] = c_object.material;
-    thisObj_u[2] = c_object.color;
-
-    float* thisObj_f = (float*)(objects_buffer+freeOffset_r+1);
-
-    switch(c_object.type)
-    {
-    case TRIANGLE:
-        thisObj_f = push_triangle(thisObj_f);
-        break;
-    case SPHERE:
-        thisObj_f = push_sphere(thisObj_f);
-        break;
-    default:
-        return;
-    }
-
-    freeOffset_r = (int32_t)((uint32_t*)thisObj_f - objects_buffer);
-    queuePos_r++;
+    uint8_t* thisObj_u = (uint8_t*)objects_buffer_i;
+    thisObj_u[0] = type;
+    thisObj_u[1] = material;
+    objects_buffer_i++;
+    push_vec3(passive);
+    push_vec3(active);
 }
 
-uint8_t c_renderMode;
-uint8_t c_vertex_count;
-
-void set_mode(uint8_t mode)
+void triangle
+(
+  uint8_t material,
+  glm::vec3 passive,
+  glm::vec3 active,
+  glm::vec3 a,
+  glm::vec3 b,
+  glm::vec3 c
+)
 {
-    c_renderMode = mode;
-
-    switch(mode)
-    {
-    case SPHERE:
-      c_object.type = SPHERE;
-      break;
-    default:
-      c_object.type = TRIANGLE;
-      break;
-    }
-
-    c_vertex_count = 0;
+  push_header(TRIANGLE, material, passive, active);
+  push_vec3(a);
+  push_vec3(b);
+  push_vec3(c);
 }
 
-void colori(uint8_t c)
+void sphere
+(
+  uint8_t material,
+  glm::vec3 passive,
+  glm::vec3 active,
+  glm::vec3 pos,
+  float radius
+)
 {
-    c_object.color = c;
+  push_header(TRIANGLE, material, passive, active);
+  push_vec3(pos);
+  *objects_buffer_i = radius;
+  objects_buffer_i++;
 }
 
-void materiali(uint8_t c)
+void quad
+(
+  uint8_t material,
+  glm::vec3 passive,
+  glm::vec3 active,
+  glm::vec3 a,
+  glm::vec3 b,
+  glm::vec3 c,
+  glm::vec3 d
+)
 {
-    c_object.material = c;
+  push_header(TRIANGLE, material, passive, active);
+  push_vec3(a);
+  push_vec3(b);
+  push_vec3(c);
+  push_header(TRIANGLE, material, passive, active);
+  push_vec3(a);
+  push_vec3(c);
+  push_vec3(d);
 }
 
-void vertexv(glm::vec3 vertex)
-{
-    switch(c_renderMode)
-    {
-    case TRIANGLE:
-        c_triangle[c_vertex_count] = performModelTransform(vertex);
-        c_vertex_count++;
-        if(c_vertex_count == 3)
-        {
-          push_object();
-          c_vertex_count = 0;
-        }
-        break;
+/*
     case TRIANGLE_FAN:
         c_triangle[c_vertex_count] = performModelTransform(vertex);
         c_vertex_count++;
@@ -344,43 +281,5 @@ void vertexv(glm::vec3 vertex)
           c_vertex_count = 2;
         }
         break;
-    case QUAD:
-        if(c_vertex_count == 3)
-        {
-          push_object();
-          c_triangle[1] = c_triangle[2];
-          c_triangle[2] = performModelTransform(vertex);
-          push_object();
-          c_vertex_count = 0;
-        }
-        else
-        {
-          c_triangle[c_vertex_count] = performModelTransform(vertex);
-          c_vertex_count++;
-        }
-        break;
-    case SPHERE:
-        break;
-    default:
-        break;
-    }
-}
-
-void vertexf(float x, float y, float z)
-{
-  vertexv(glm::vec3(x, y, z));
-}
-
-void spherev(glm::vec3 pos, float r)
-{
-  c_sphere.pos = pos;
-  c_sphere.r = r;
-  push_object();
-}
-
-void spheref(float x, float y, float z, float r)
-{
-  spherev(glm::vec3(x, y, z), r);
-}
-
+*/
 }

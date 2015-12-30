@@ -1,37 +1,27 @@
 /*{-# RayTracer by AlexD2580 -- where no Harukas were harmed! #-}*/
 
-/*
-                PUBLISHED UNDER THE DWTFYWWI-LICENSE
-*/
+/**** PUBLISHED UNDER THE DWTFYWWI-LICENSE ****/
 
+/**
+uint8 type;
+uint8 material;
+uin16 __padding__
+float3 passive;
+float3 active;
 
-/*
-Object:
-type :: int
-material :: int
-color :: float
-object :: ?
-
-
-Concave PolygonN:
-n :: int
-vertices :: vertex[n]
-
-Vertex :
-pos :: float3
-
-Sphere:
 data...
 
-Quad:
-*/
+sphere -> 11*4 byte
+triangle -> 16*4 byte
+**/
 
+#define END 0
 #define TRIANGLE 1
 #define SPHERE 2
 
 //Surface types
 #define NONE 0
-#define MATT 1 //daemon
+#define DIFFUSE 1
 #define METALLIC 2
 #define MIRROR 3
 #define GLASS 4
@@ -41,11 +31,6 @@ float3 reflect(float3 source, float3 normal)
     float3 axis = normalize(normal);
     float3 ax_dir = axis * dot(source, axis);
     return(source - 2*ax_dir);
-}
-
-char isLit(global float* light, float3 pos)
-{
-    return 0;
 }
 
 void traceTriangle
@@ -138,41 +123,30 @@ void traceSphere
     return;
 }
 
-global uchar* runTraceObjects
+global float* runTraceObjects
 (
     private float3 eyePos,
     private float3 eyeDir, //normalized
     global float* objects,
-    global int* offsets,
     private float* depth,
     private float3 res[]
 )
 {
-    private int offset;
-    global uchar* closest = 0;
-    global float* object;
-    private uchar type;
+    global float* closest = 0;
+    private uchar type = ((global uchar*)objects)[0];
     private float dth;
-    private float frag = 1.0f;
 
-    for(int i=0; i<1000; i++)
+    while(type != END) // type 0 is END
     {
-        offset = offsets[i];
-        if(offset == -1)
-            return closest; //-1 indicates last object
-
-        object = objects + offset;
-        type = ((global uchar*)object)[0];
-
         dth = *depth;
 
         switch(type)
         {
-        case TRIANGLE: // +1 skip header
-            traceTriangle(eyePos, eyeDir, object+1, depth, res);
+        case TRIANGLE: // +7 skip header
+            traceTriangle(eyePos, eyeDir, objects+7, depth, res);
             break;
         case SPHERE:
-            traceSphere(eyePos, eyeDir, object+1, depth, res);
+            traceSphere(eyePos, eyeDir, objects+7, depth, res);
             break;
         default:
             break;
@@ -181,74 +155,81 @@ global uchar* runTraceObjects
         if(*depth < dth)
         {
             dth = *depth;
-            closest = (global uchar*)object;
+            closest = objects;
         }
+
+        // go to next
+        switch(type)
+        {
+        case TRIANGLE:
+          objects += 7 + 9;
+          break;
+        case SPHERE:
+          objects += 7 + 4;
+          break;
+        }
+
+        type = ((global uchar*)objects)[0];
     }
     return closest;
 }
 
-/**
- * Returns the frag-value for the given ray
- */
-float traceObjects
+float3 traceObjects
 (
     private float3 eyePos,
     private float3 eyeDir, //normalized
-    global uchar* objects,
-    global int* offsets,
+    global float* objects,
     private float* depth,
     private float3 res[]
 )
 {
-    global float* objects_f = (global float*)objects;
+    global float* closest =
+      runTraceObjects(eyePos, eyeDir, objects, depth, res);
 
-    global uchar* closest =
-      runTraceObjects(eyePos, eyeDir, objects_f, offsets, depth, res);
-
-    private int itr = 0;
-    private float frag = 1.0f;
-    private float dth;
     private float3 pos;
     private float3 normal;
 
-    private uchar type;
     private uchar material;
-    private float color;
+    private float3 passive;
+    private float3 active;
 
-    while(closest != 0 && itr < 100 && frag > 0.0039f)
+    private float3 brdf = (float3){ 1.0f, 1.0f, 1.0f };
+    private float3 frag = (float3){ 0.0f, 0.0f, 0.0f };
+
+    for(private int itr=0; closest != 0 && itr < 100; itr++)
     {
-        type = closest[0];
-        material = closest[1];
-        color = (float)closest[2]/255.0f;
-
-        dth = 1.0f/0.0f; //reset
+        material = ((global uchar*)closest)[1];
+        passive = (float3){ closest[1], closest[2], closest[3] };
+        active = (float3){ closest[4], closest[5], closest[6] };
+        pos = res[0];
+        normal = res[1];
 
         switch(material)
         {
-        case MATT:
-            frag *= color;
-            closest = 0;
+        case DIFFUSE:
+        default:
+            eyePos = pos;
+            eyeDir = reflect(eyeDir, normal); // TODO random reflect
             break;
-        case METALLIC:
-            frag *= color;
-            eyePos = res[0];
-            eyeDir = reflect(eyeDir, res[1]);
-            closest =
-              runTraceObjects(eyePos, eyeDir, objects_f, offsets, &dth, res);
+        /*case METALLIC:
+            eyePos = pos;
+            eyeDir = reflect(eyeDir, normal);
             break;
         case MIRROR:
-            eyePos = res[0];
-            eyeDir = reflect(eyeDir, res[1]);
-            closest =
-              runTraceObjects(eyePos, eyeDir, objects_f, offsets, &dth, res);
+            eyePos = pos;
+            eyeDir = reflect(eyeDir, normal);
             break;
         case GLASS:
             break;
         default:
-            break;
+            break;*/
         }
 
-        itr++;
+        frag += active * brdf;
+        brdf *= 2.0f * passive * dot(normal, eyeDir);
+
+        private float dth = 1.0f/0.0f; //reset
+        closest = runTraceObjects(eyePos, eyeDir, objects, &dth, res);
     }
 
     return frag;
@@ -268,10 +249,9 @@ kernel void trace //main
 (
     global int* startID,
     global float* fov,
-    global uchar* objects,
-    global int* offsets,
+    global float* objects,
     global uint* frameBuf,
-    global float* depthBuf,
+    global float* depthBuf
 )
 {
     const int id = *startID + get_global_id(0);
@@ -300,61 +280,19 @@ kernel void trace //main
     eyeDir += (rel_y*max_u*eyeUp - rel_x*max_r*eyeLeft);
     eyeDir = normalize(eyeDir); // TODO FIX THIS!!
 
-    private float frag;
+    private float3 frag;
     private float depth = depthBuf[id];
     private float3 res[2];
 
     //------------------------------------------------------------------------//
-      frag = traceObjects(eyePos, eyeDir, objects, offsets, &depth, res);
+      frag = traceObjects(eyePos, eyeDir, objects, &depth, res);
     //------------------------------------------------------------------------//
 
-    float3 toSun = (float3){ 0.0f, 1.0f, 0.0f };
+    uchar frag_r = (uchar)clamp(255.1f*frag.x, 0.0f, 255.0f);
+    uchar frag_g = (uchar)clamp(255.1f*frag.y, 0.0f, 255.0f);
+    uchar frag_b = (uchar)clamp(255.1f*frag.z, 0.0f, 255.0f);
+    uint frag_i = frag_r << 24 | frag_g << 16 | frag_b << 8 | 255;
 
-    float ambient = 0.2f;
-    float diffuse = 0.0f;
-    float specular = 0.0f;
-
-    /** Sky (box) **/
-    if(depth >= depth + 10.0f)
-    {
-        diffuse = 0.8*clamp(dot(eyeDir, toSun), 0.0f, 1.0f);
-    }
-    /** Some Object **/
-    else
-    {
-        float3 pos = res[0];
-        float3 normal = res[1];
-
-        float cos_t = dot(normal, toSun);
-        /** On sun side of Object **/
-        if(cos_t > -0.001f)
-        {
-          float depthL = 1.0f/0.0f;
-          traceObjects(
-            pos + 0.0001f*normal,
-            toSun,
-            objects,
-            offsets,
-            &depthL,
-            res
-            );
-          /** Lit by sun **/
-          if(depthL >= depthL + 10.0f)
-          {
-            diffuse = 0.8f * clamp(cos_t, 0.0f, 1.0f);
-            float shininess = 100.0f;
-            /** Sun reflection on surface **/
-            float3 reflected = reflect(-toSun, normal);
-            float3 posToEye = normalize(eyePos - pos);
-            float coincidence = max(0.0f, dot(reflected,posToEye));
-            specular = clamp(pow(coincidence, shininess), 0.0f, 1.0f);
-          }
-        }
-
-    }
-    frag = clamp(frag*(ambient+diffuse)+specular, 0.0f, 1.0f);
-    uchar frag_c = (uchar)floor(255.1f*frag);
-    int frag_i = frag_c << 24 | frag_c << 16 | frag_c << 8 | 255;
     frameBuf[id] = frag_i;
     depthBuf[id] = depth;
     return;

@@ -67,19 +67,22 @@ void prepareView(void)
 void scene(void)
 {
   cout << "[Main] Queueing models" << endl;
-  Scene::colori(000);
-  Scene::materiali(MATT);
-  Scene::set_mode(QUAD);
-  Scene::vertexf(-20.0, -20.0, 0.0);
-  Scene::vertexf(20.0, -20.0, 0.0);
-  Scene::vertexf(20.0, 20.0, 0.0);
-  Scene::vertexf(-20.0, 20.0, 0.0);
+
+  Scene::quad(
+    DIFFUSE,
+    glm::vec3(1.0f, 0.0f, 0.0f),
+    glm::vec3(0.0f, 1.0f, 0.0f),
+    glm::vec3(-20.0, -20.0, 0.0),
+    glm::vec3(20.0, -20.0, 0.0),
+    glm::vec3(20.0, 20.0, 0.0),
+    glm::vec3(-20.0, 20.0, 0.0)
+  );
 }
 
 
 int main(void)
 {
-    cout << "[Main] Started" << endl;
+    cout << "[Main] Launched." << endl;
 
     string kernel("./cl/ray_frag.cl");
     string cleaner("./cl/clearBuffers.cl");
@@ -110,9 +113,16 @@ int main(void)
 
       while(!SDL::die)
       {
+        SDL::handleEvents();
+        CLHelper::clearBuffers(ocl);
+        CLHelper::render(ocl);
         OpenCL::readBufferBlocking(CLHelper::queue, CLHelper::frameBuf_mem,
           size_w*size_h*sizeof(uint32_t), frame_buffer);
+        //for(int i=0; i<size_w*size_h; i++)
+          //cout << frame_buffer[i] << " ";
+        //SDL::die = true;
         SDL::drawFrame(frame_buffer);
+        //SDL::wait(100);
       }
     }
     catch(OpenCLException& e)
@@ -121,6 +131,7 @@ int main(void)
     }
 
     SDL::close();
+    cout << "[Main] Closed." << endl;
     return 0;
 }
 

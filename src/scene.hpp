@@ -6,20 +6,30 @@
 
 #define UINT8_T(x) ((uint8_t)x)
 
-// used by opencl kernel
-#define TRIANGLE UINT8_T(1)
-#define SPHERE UINT8_T(2)
+/** PRIMITIVE TYPE **/
+// also used by opencl kernel
+#define END             UINT8_T(0)
+#define TRIANGLE        UINT8_T(1)
+#define SPHERE          UINT8_T(2)
 
-// local defines
-#define TRIANGLE_FAN UINT8_T(3)
-#define TRIANGLE_STRIP UINT8_T(4)
-#define QUAD UINT8_T(5)
+/** SURFACE TYPE **/
+#define DIFFUSE   UINT8_T(1)
+#define METALLIC  UINT8_T(2)
+#define MIRROR    UINT8_T(3)
+#define GLASS     UINT8_T(4)
 
-//Surface types
-#define MATT 1
-#define METALLIC 2
-#define MIRROR 3
-#define GLASS 4
+/**
+uint8 type;
+uint8 material;
+uin16 __padding__
+float3 passive;
+float3 active;
+
+data...
+
+sphere -> 11*4 byte
+triangle -> 16*4 byte
+**/
 
 #define MAX_PRIMITIVES 1000
 
@@ -37,12 +47,12 @@ namespace Scene
   /**
    * Local Buffers
    */
-  extern uint32_t*       objects_buffer; //data items MUST be aligned! max(type T) = 4byte
-  extern int32_t*        offsets_buffer;
-  extern bool            buffer_full;
+  extern float*     objects_buffer_start; //data items MUST be aligned! max(type T) = 4byte
+  extern float*     objects_buffer_i;
+  extern bool       buffer_full;
 
   void init(unsigned int, unsigned int);
-  void clearBuffers(void);
+  void clearBuffers(void); // clears the scene
 
   void pop_matrix(void);
   void push_matrix(void);
@@ -61,15 +71,36 @@ namespace Scene
   void translatef(float x, float y, float z);
 
   //Scene description
-  void set_mode(uint8_t mode);
 
-  void vertexv(glm::vec3 posv);
-  void vertexf(float x, float y, float z);
-  void spherev(glm::vec3 posv, float r);
-  void spheref(float x, float y, float z, float r);
+  void triangle
+  (
+    uint8_t material,
+    glm::vec3 passive,
+    glm::vec3 active,
+    glm::vec3 a,
+    glm::vec3 b,
+    glm::vec3 c
+  );
 
-  void colori(uint8_t c);
-  void materiali(uint8_t c);
+  void sphere
+  (
+    uint8_t material,
+    glm::vec3 passive,
+    glm::vec3 active,
+    glm::vec3 pos,
+    float r
+  );
 
+  void quad
+  (
+    uint8_t material,
+    glm::vec3 passive,
+    glm::vec3 active,
+    glm::vec3 a,
+    glm::vec3 b,
+    glm::vec3 c,
+    glm::vec3 d
+  );
 }
+
 #endif

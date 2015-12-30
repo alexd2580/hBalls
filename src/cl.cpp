@@ -27,9 +27,11 @@ struct event_queue_
 
 OpenCL::~OpenCL(void)
 {
+    cout << "[OpenCL] Closing." << endl;
     clReleaseContext(context);
     if(device_ids != nullptr) free(device_ids);
     if(platform_ids != nullptr) free(platform_ids);
+    cout << "[OpenCL] Closed." << endl;
 }
 
 bool load_file(string& name, string& content)

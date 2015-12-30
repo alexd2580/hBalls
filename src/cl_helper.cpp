@@ -12,8 +12,7 @@ namespace CLHelper
    * Buffers on GPU
    */
   cl_mem /*float*/ fov_mem;
-  cl_mem /*char */ objects_mem;
-  cl_mem /*int  */ offsets_mem;
+  cl_mem /*float*/ objects_mem;
   cl_mem /*char4*/ frameBuf_mem;
   cl_mem /*float*/ depthBuf_mem;
 
@@ -38,8 +37,7 @@ namespace CLHelper
 
     frameBuf_mem = cl.allocate_space(size_h*size_w*sizeof(uint32_t), nullptr);
     fov_mem = cl.allocate_space(16*FLOAT_SIZE, nullptr);
-    objects_mem = cl.allocate_space(MAX_PRIMITIVES*10*FLOAT_SIZE, nullptr);
-    offsets_mem = cl.allocate_space(MAX_PRIMITIVES*INT_SIZE, nullptr);
+    objects_mem = cl.allocate_space(MAX_PRIMITIVES*14*FLOAT_SIZE, nullptr);
     depthBuf_mem = cl.allocate_space(size_w*size_h*FLOAT_SIZE, nullptr);
 
     queue = cl.createCommandQueue();
@@ -49,30 +47,38 @@ namespace CLHelper
     string tracerMain("trace");
     raytracer = cl.load_program(tracepath, tracerMain);
 
-    OpenCL::setArgument(bufferCleaner, 0, MEM_SIZE, &offsets_mem);
-    OpenCL::setArgument(bufferCleaner, 1, MEM_SIZE, &frameBuf_mem);
-    OpenCL::setArgument(bufferCleaner, 2, MEM_SIZE, &depthBuf_mem);
+    OpenCL::setArgument(bufferCleaner, 0, MEM_SIZE, &frameBuf_mem);
+    OpenCL::setArgument(bufferCleaner, 1, MEM_SIZE, &depthBuf_mem);
 
     OpenCL::setArgument(raytracer, 1, MEM_SIZE, &fov_mem);
     OpenCL::setArgument(raytracer, 2, MEM_SIZE, &objects_mem);
-    OpenCL::setArgument(raytracer, 3, MEM_SIZE, &offsets_mem);
-    OpenCL::setArgument(raytracer, 4, MEM_SIZE, &frameBuf_mem);
-    OpenCL::setArgument(raytracer, 5, MEM_SIZE, &depthBuf_mem);
+    OpenCL::setArgument(raytracer, 3, MEM_SIZE, &frameBuf_mem);
+    OpenCL::setArgument(raytracer, 4, MEM_SIZE, &depthBuf_mem);
 
     clearBuffers(cl);
 
     cout << "[CLHelper] Done." << endl;
   }
 
+  void close(void)
+  {
+    cout << "[CLHelper] Closing." << endl;
+    clReleaseKernel(bufferCleaner);
+    clReleaseKernel(raytracer);
+
+    clReleaseCommandQueue(queue);
+    cout << "[CLHelper] Closed." << endl;
+  }
+
   void pushScene(void)
   {
     cout << "[CLHelper] Pushing scene definition." << endl;
 
-    OpenCL::writeBufferBlocking(queue, objects_mem,
-      MAX_PRIMITIVES*10*FLOAT_SIZE, Scene::objects_buffer);
+    size_t size = Scene::objects_buffer_i - Scene::objects_buffer_start;
+    size = (size+1) * FLOAT_SIZE;
+    *((uint8_t*)Scene::objects_buffer_i) = END;
 
-    OpenCL::writeBufferBlocking(queue, offsets_mem,
-      MAX_PRIMITIVES*INT_SIZE, Scene::offsets_buffer);
+    OpenCL::writeBufferBlocking(queue, objects_mem, size, Scene::objects_buffer_start);
   }
 
   void render(OpenCL& cl)
@@ -88,7 +94,7 @@ namespace CLHelper
           idi = i*size_w;
           id_mem = cl.allocate_space(INT_SIZE, &idi);
           OpenCL::setArgument(raytracer, 0, MEM_SIZE, &id_mem);
-          event_list[i] = OpenCL::enqueue_kernel(size_w, raytracer, queue);
+          event_list.push_back(OpenCL::enqueue_kernel(size_w, raytracer, queue));
       }
 
       cl_int status;

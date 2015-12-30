@@ -27,7 +27,7 @@ namespace SDL
 
 	int init(unsigned int w, unsigned int h)
 	{
-		cout << "[SDL] Initializing" << endl;
+		cout << "[SDL] Initializing." << endl;
 
 	  image_w = w;
 	  image_h = h;
@@ -99,7 +99,7 @@ namespace SDL
 			switch(event.type)
 			{
 			case SDL_QUIT:
-				cerr << "[GRAPHICS] Close requested" << endl;
+				cerr << "[SDL] Close requested" << endl;
 				die = 1;
 				break;
 			case SDL_KEYDOWN:
