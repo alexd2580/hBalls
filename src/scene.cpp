@@ -233,7 +233,7 @@ void sphere
   float radius
 )
 {
-  push_header(TRIANGLE, material, passive, active);
+  push_header(SPHERE, material, passive, active);
   push_vec3(pos);
   *objects_buffer_i = radius;
   objects_buffer_i++;

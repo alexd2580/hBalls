@@ -6,6 +6,77 @@
 
 using namespace std;
 
+char const* translate_cl_error(cl_int error)
+{
+  #define ERRORCASE(e) case e: return #e;
+  switch(error)
+  {
+    ERRORCASE(CL_SUCCESS)
+    ERRORCASE(CL_DEVICE_NOT_FOUND)
+    ERRORCASE(CL_DEVICE_NOT_AVAILABLE)
+    ERRORCASE(CL_COMPILER_NOT_AVAILABLE)
+    ERRORCASE(CL_MEM_OBJECT_ALLOCATION_FAILURE)
+    ERRORCASE(CL_OUT_OF_RESOURCES)
+    ERRORCASE(CL_OUT_OF_HOST_MEMORY)
+    ERRORCASE(CL_PROFILING_INFO_NOT_AVAILABLE)
+    ERRORCASE(CL_MEM_COPY_OVERLAP)
+    ERRORCASE(CL_IMAGE_FORMAT_MISMATCH)
+    ERRORCASE(CL_IMAGE_FORMAT_NOT_SUPPORTED)
+    ERRORCASE(CL_BUILD_PROGRAM_FAILURE)
+    ERRORCASE(CL_MAP_FAILURE)
+    ERRORCASE(CL_MISALIGNED_SUB_BUFFER_OFFSET)
+    ERRORCASE(CL_EXEC_STATUS_ERROR_FOR_EVENTS_IN_WAIT_LIST)
+    ERRORCASE(CL_COMPILE_PROGRAM_FAILURE)
+    ERRORCASE(CL_LINKER_NOT_AVAILABLE)
+    ERRORCASE(CL_LINK_PROGRAM_FAILURE)
+    ERRORCASE(CL_DEVICE_PARTITION_FAILED)
+    ERRORCASE(CL_KERNEL_ARG_INFO_NOT_AVAILABLE)
+
+    ERRORCASE(CL_INVALID_VALUE)
+    ERRORCASE(CL_INVALID_DEVICE_TYPE)
+    ERRORCASE(CL_INVALID_PLATFORM)
+    ERRORCASE(CL_INVALID_DEVICE)
+    ERRORCASE(CL_INVALID_CONTEXT)
+    ERRORCASE(CL_INVALID_QUEUE_PROPERTIES)
+    ERRORCASE(CL_INVALID_COMMAND_QUEUE)
+    ERRORCASE(CL_INVALID_HOST_PTR)
+    ERRORCASE(CL_INVALID_MEM_OBJECT)
+    ERRORCASE(CL_INVALID_IMAGE_FORMAT_DESCRIPTOR)
+    ERRORCASE(CL_INVALID_IMAGE_SIZE)
+    ERRORCASE(CL_INVALID_SAMPLER)
+    ERRORCASE(CL_INVALID_BINARY)
+    ERRORCASE(CL_INVALID_BUILD_OPTIONS)
+    ERRORCASE(CL_INVALID_PROGRAM)
+    ERRORCASE(CL_INVALID_PROGRAM_EXECUTABLE)
+    ERRORCASE(CL_INVALID_KERNEL_NAME)
+    ERRORCASE(CL_INVALID_KERNEL_DEFINITION)
+    ERRORCASE(CL_INVALID_KERNEL)
+    ERRORCASE(CL_INVALID_ARG_INDEX)
+    ERRORCASE(CL_INVALID_ARG_VALUE)
+    ERRORCASE(CL_INVALID_ARG_SIZE)
+    ERRORCASE(CL_INVALID_KERNEL_ARGS)
+    ERRORCASE(CL_INVALID_WORK_DIMENSION)
+    ERRORCASE(CL_INVALID_WORK_GROUP_SIZE)
+    ERRORCASE(CL_INVALID_WORK_ITEM_SIZE)
+    ERRORCASE(CL_INVALID_GLOBAL_OFFSET)
+    ERRORCASE(CL_INVALID_EVENT_WAIT_LIST)
+    ERRORCASE(CL_INVALID_EVENT)
+    ERRORCASE(CL_INVALID_OPERATION)
+    ERRORCASE(CL_INVALID_GL_OBJECT)
+    ERRORCASE(CL_INVALID_BUFFER_SIZE)
+    ERRORCASE(CL_INVALID_MIP_LEVEL)
+    ERRORCASE(CL_INVALID_GLOBAL_WORK_SIZE)
+    ERRORCASE(CL_INVALID_PROPERTY)
+    ERRORCASE(CL_INVALID_IMAGE_DESCRIPTOR)
+    ERRORCASE(CL_INVALID_COMPILER_OPTIONS)
+    ERRORCASE(CL_INVALID_LINKER_OPTIONS)
+    ERRORCASE(CL_INVALID_DEVICE_PARTITION_COUNT)
+    default:
+      return "undefined";
+  }
+}
+
+
 OpenCLException::OpenCLException(cl_int err, string& msg)
   : error(err), message(msg)
 {
@@ -13,7 +84,8 @@ OpenCLException::OpenCLException(cl_int err, string& msg)
 
 void OpenCLException::print(void)
 {
-  cerr << "[OpenCL] Error " << error << ": " << message << endl;
+  cerr << "[OpenCL] Error " << translate_cl_error(error)
+    << " := " << error << ": " << message << endl;
 }
 
 cl_int OpenCL::error;
@@ -318,7 +390,25 @@ cl_event OpenCL::enqueue_kernel(size_t width, cl_kernel& kernel, cl_command_queu
   const size_t workSize[] = { width, 0, 0 };
   cl_event event;
   error = clEnqueueNDRangeKernel(queue, kernel,
-    1, // One dimension, because workSize has dimension one
+    1,
+    nullptr,
+    workSize,
+    nullptr,
+    0, nullptr, &event);
+  if(error != CL_SUCCESS)
+  {
+    string msg("Could not enqueue kernel.");
+    throw OpenCLException(error, msg);
+  }
+  return event;
+}
+
+cl_event OpenCL::enqueue_kernel(size_t width, size_t height, cl_kernel& kernel, cl_command_queue& queue)
+{
+  const size_t workSize[] = { width, height, 0 };
+  cl_event event;
+  error = clEnqueueNDRangeKernel(queue, kernel,
+    2,
     nullptr,
     workSize,
     nullptr,

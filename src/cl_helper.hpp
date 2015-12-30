@@ -8,15 +8,19 @@
 
 #define MEM_SIZE SIZE_OF(cl_mem)
 
+#define ULONG_SIZE SIZE_OF(unsigned long)
+
 namespace CLHelper
 {
   /**
    * Buffers on GPU
    */
-  extern cl_mem /*float*/ fov_mem;
-  extern cl_mem /*float*/ objects_mem;
-  extern cl_mem /*char */ frameBuf_mem;
-  extern cl_mem /*float*/ depthBuf_mem;
+  extern cl_mem /*float */ fov_mem;
+  extern cl_mem /*float */ objects_mem;
+  extern cl_mem /*char4 */ frame_c_mem;
+  extern cl_mem /*float4*/ frame_f_mem;
+  extern cl_mem /*float4*/ samples_mem;
+  extern cl_mem /*PRNG  */ prng_mem;
 
   extern cl_command_queue queue;
   extern cl_kernel raytracer;
@@ -33,7 +37,7 @@ namespace CLHelper
   );
   void close(void);
   void pushScene(void);
-  void render(OpenCL&);
+  void render(void);
 
 }
 

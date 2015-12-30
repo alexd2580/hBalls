@@ -11,6 +11,8 @@ by remote i mean the GPU/CPU-internal memory
 and local is userspace
 */
 
+char const* translate_cl_error(cl_int error);
+
 class OpenCLException
 {
 private:
@@ -97,6 +99,7 @@ public:
    * Returns an event by which the computation can be identified
    */
   static cl_event enqueue_kernel(size_t width, cl_kernel& kernel, cl_command_queue& queue);
+  static cl_event enqueue_kernel(size_t width, size_t height, cl_kernel& kernel, cl_command_queue& queue);
 
   /**
    * Input:

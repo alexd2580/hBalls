@@ -21,8 +21,8 @@ using namespace std;
 
 void prepareView(void)
 {
-  glm::vec3 camPos(0.0f, 0.0f, 100.0f);
-  glm::vec3 camDir(0.0f, 0.0f, -1.0f);
+  glm::vec3 camPos(50.0f, 50.0f, 50.0f);
+  glm::vec3 camDir(-1.0f, -1.0f, -1.0f);
   glm::vec3 camUp(0.0f, 1.0f, 0.0f);
 
   float fov = F_PI/2.0f;
@@ -68,14 +68,76 @@ void scene(void)
 {
   cout << "[Main] Queueing models" << endl;
 
-  Scene::quad(
+  /*Scene::quad(
     DIFFUSE,
-    glm::vec3(1.0f, 0.0f, 0.0f),
-    glm::vec3(0.0f, 1.0f, 0.0f),
+    glm::vec3(1.0f, 1.0f, 1.0f),
+    glm::vec3(0.0f, 0.0f, 0.0f),
     glm::vec3(-20.0, -20.0, 0.0),
     glm::vec3(20.0, -20.0, 0.0),
     glm::vec3(20.0, 20.0, 0.0),
     glm::vec3(-20.0, 20.0, 0.0)
+  );*/
+
+  Scene::push_matrix();
+
+  glm::vec3 a(-20.0, 0.0, 0.0);
+  glm::vec3 b(20.0, 0.0, 0.0);
+  glm::vec3 c(0.0, 0.0, -10.0*sqrt(12.0));
+  glm::vec3 d(0.0, 0.0, 0.0);
+
+  glm::vec3 x = c / 3.0f;
+  d.z = x.z;
+
+  //set center to x|y=20;
+  Scene::translatef(-x.x, 20.0f, -x.z);
+
+  x -= a;
+  float h = glm::length(x);
+  h = (float)sqrt((2.0f*20.0f)*(2.0f*20.0f) - h*h);
+  d.y = h;
+
+  Scene::sphere(
+    DIFFUSE,
+    glm::vec3(0.0f, 0.0f, 1.0f),
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    a,
+    20.0f
+  );
+
+  Scene::sphere(
+    DIFFUSE,
+    glm::vec3(0.0f, 1.0f, 0.0f),
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    b,
+    20.0f
+  );
+
+  Scene::sphere(
+    DIFFUSE,
+    glm::vec3(1.0f, 0.0f, 0.0f),
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    c,
+    20.0f
+  );
+
+  Scene::sphere(
+    DIFFUSE,
+    glm::vec3(1.0f, 1.0f, 1.0f),
+    glm::vec3(0.0f, 0.0f, 0.0f),
+    d,
+    20.0f
+  );
+
+  Scene::pop_matrix();
+
+  Scene::quad(
+    DIFFUSE,
+    glm::vec3(1.0f, 1.0f, 1.0f),
+    glm::vec3(0.5f, 0.5f, 0.5f),
+    glm::vec3(-10000.0, -100.0, -10000.0),
+    glm::vec3(-10000.0, -100.0, 10000.0),
+    glm::vec3(10000.0, -100.0, 10000.0),
+    glm::vec3(10000.0, -100.0, -10000.0)
   );
 }
 
@@ -99,6 +161,8 @@ int main(void)
       return 1;
     }
 
+    float samples = 0.0f;
+
     try
     {
       OpenCL ocl;
@@ -115,8 +179,11 @@ int main(void)
       {
         SDL::handleEvents();
         CLHelper::clearBuffers(ocl);
-        CLHelper::render(ocl);
-        OpenCL::readBufferBlocking(CLHelper::queue, CLHelper::frameBuf_mem,
+        samples++;
+        OpenCL::writeBufferBlocking(CLHelper::queue, CLHelper::samples_mem,
+          FLOAT_SIZE, &samples);
+        CLHelper::render();
+        OpenCL::readBufferBlocking(CLHelper::queue, CLHelper::frame_c_mem,
           size_w*size_h*sizeof(uint32_t), frame_buffer);
         //for(int i=0; i<size_w*size_h; i++)
           //cout << frame_buffer[i] << " ";
