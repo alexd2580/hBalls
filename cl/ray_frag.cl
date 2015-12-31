@@ -295,7 +295,7 @@ float3 traceObjects
     private float3 brdf = (float3){ 1.0f, 1.0f, 1.0f };
     private float3 frag = (float3){ 0.0f, 0.0f, 0.0f };
 
-    for(private int itr=0; closest != 0 && itr < 3; itr++)
+    for(private int itr=0; closest != 0 && itr < 5; itr++)
     {
         material = ((global uchar*)closest)[1];
         passive = (float3){ closest[1], closest[2], closest[3] };

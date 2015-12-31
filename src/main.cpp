@@ -22,8 +22,8 @@ using namespace OpenCL;
 
 void prepareView(void)
 {
-  glm::vec3 camPos(0.0f, 0.9f, 0.0f);
-  glm::vec3 camDir(0.3f, 0, -1);
+  glm::vec3 camPos(-0.3f, 1.2f, 0.0f);
+  glm::vec3 camDir(0.5f, -0.2, -1);
   glm::vec3 camUp(0.0f, 1.0f, 0.0f);
 
   float fov = F_PI/4.f;
@@ -81,7 +81,7 @@ void scene(void)
 
   Scene::push_matrix();
   Scene::translate(1.5f, 1.5f, -1.5f);
-  room(3.f, 3.f, 3.f, white);
+  //room(3.f, 3.f, 3.f, white);
   Scene::pop_matrix();
 
   Scene::push_matrix();
@@ -137,6 +137,7 @@ int main(void)
         CLHelper::render();
         OpenCL::readBufferBlocking(CLHelper::queue, CLHelper::frame_c_mem, frame_buffer);
         SDL::drawFrame(frame_buffer);
+        cout << "[Main] Samples: " << (int)samples << endl;
       }
 
       env.release();

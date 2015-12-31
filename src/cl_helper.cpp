@@ -99,7 +99,6 @@ namespace CLHelper
 
   void render(void)
   {
-      cout << "[CLHelper] Rendering." << endl;
       path_tracer->enqueue_kernel(size_w, size_h, queue);
       clFinish(queue);
   }
