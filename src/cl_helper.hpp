@@ -6,34 +6,36 @@
 
 #include"cl.hpp"
 
-#define MEM_SIZE SIZE_OF(cl_mem)
-
 #define ULONG_SIZE SIZE_OF(unsigned long)
 
+/**
+ * This namepace holds the openc environment as well
+ * as the path_tracer and its buffers
+ */
 namespace CLHelper
 {
   /**
    * Buffers on GPU
    */
-  extern cl_mem /*float */ fov_mem;
-  extern cl_mem /*float */ objects_mem;
-  extern cl_mem /*char4 */ frame_c_mem;
-  extern cl_mem /*float4*/ frame_f_mem;
-  extern cl_mem /*float4*/ samples_mem;
-  extern cl_mem /*PRNG  */ prng_mem;
+   extern OpenCL::RemoteBuffer /*float */ fov_mem;
+   extern OpenCL::RemoteBuffer /*float */ objects_mem;
+   extern OpenCL::RemoteBuffer /*char4 */ frame_c_mem;
+   extern OpenCL::RemoteBuffer /*float4*/ frame_f_mem;
+   extern OpenCL::RemoteBuffer /*float */ samples_mem;
+   extern OpenCL::RemoteBuffer /*PRNG  */ prng_mem;
 
   extern cl_command_queue queue;
-  extern cl_kernel raytracer;
-  extern cl_kernel bufferCleaner;
+  extern OpenCL::Kernel* path_tracer;
+  extern OpenCL::Kernel* buffer_cleaner;
 
-  void clearBuffers(OpenCL&);
+  void clearBuffers(void);
   void init
   (
     unsigned int w,
     unsigned int h,
     std::string& tracepath,
     std::string& cleanpath,
-    OpenCL& cl
+    OpenCL::Environment& cl
   );
   void close(void);
   void pushScene(void);

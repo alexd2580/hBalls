@@ -11,21 +11,22 @@ clock_gettime(CLOCK_REALTIME, &abstime);
 abstime.tv_sec += cooldown;
 pthread_cond_timedwait(&notifier, &mutex, &abstime);*/
 
-#include"scene.hpp"
+#include"scene_helper.hpp"
 #include"cl_helper.hpp"
 #include"sdl.hpp"
 
 using namespace std;
+using namespace OpenCL;
 
 #define F_PI ((float)M_PI)
 
 void prepareView(void)
 {
-  glm::vec3 camPos(-6.6f, 50.0f, 66.6f);
-  glm::vec3 camDir(6.6f, -50.f, -66.6f);
+  glm::vec3 camPos(0.0f, 0.9f, 0.0f);
+  glm::vec3 camDir(0.3f, 0, -1);
   glm::vec3 camUp(0.0f, 1.0f, 0.0f);
 
-  float fov = F_PI/2.0f;
+  float fov = F_PI/4.f;
 
   camDir = glm::normalize(camDir);
   camUp = glm::normalize(camUp);
@@ -61,90 +62,37 @@ void prepareView(void)
   data_i[0] = Scene::size_w;
   data_i[1] = Scene::size_h;
 
-  OpenCL::writeBufferBlocking(CLHelper::queue, CLHelper::fov_mem, 16*FLOAT_SIZE, data);
+  OpenCL::writeBufferBlocking(CLHelper::queue, CLHelper::fov_mem, data);
 }
 
 void scene(void)
 {
   cout << "[Main] Queueing models" << endl;
 
-  /*Scene::quad(
-    DIFFUSE,
-    glm::vec3(1.0f, 1.0f, 1.0f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    glm::vec3(-20.0, -20.0, 0.0),
-    glm::vec3(20.0, -20.0, 0.0),
-    glm::vec3(20.0, 20.0, 0.0),
-    glm::vec3(-20.0, 20.0, 0.0)
-  );*/
+  Scene::Material red  (DIFFUSE, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+  Scene::Material green(DIFFUSE, glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+  Scene::Material blue (DIFFUSE, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+
+  Scene::Material mirror(MIRROR, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+  Scene::Material metal(METALLIC, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+  Scene::Material lamp(DIFFUSE, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(5.0f, 5.0f, 5.0f));
+
+  Scene::Material white (DIFFUSE, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
 
   Scene::push_matrix();
-
-  glm::vec3 a(40.0, 0.0, 0.0);
-
-  Scene::sphere(
-    DIFFUSE,
-    glm::vec3(0.0f, 0.0f, 1.0f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    a,
-    20.0f
-  );
-
-  Scene::rotatef(2.0f*F_PI/3.0f, 0.0f, 1.0f, 0.0f);
-
-  Scene::sphere(
-    DIFFUSE,
-    glm::vec3(0.0f, 1.0f, 0.0f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    a,
-    20.0f
-  );
-
-  Scene::rotatef(2.0f*F_PI/3.0f, 0.0f, 1.0f, 0.0f);
-
-  Scene::sphere(
-    DIFFUSE,
-    glm::vec3(1.0f, 0.0f, 0.0f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    a,
-    20.0f
-  );
-
-  Scene::sphere(
-    METALLIC,
-    glm::vec3(1.0f, 1.0f, 1.0f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    15.0f
-  );
-
-  Scene::sphere(
-    DIFFUSE,
-    glm::vec3(1.0f, 1.0f, 1.0f),
-    glm::vec3(1.0f, 1.0f, 1.0f),
-    glm::vec3(0.0f, 7000.0f, 0.0f),
-    5000.0f
-  );
-
+  Scene::translate(1.5f, 1.5f, -1.5f);
+  room(3.f, 3.f, 3.f, white);
   Scene::pop_matrix();
 
-  Scene::sphere(
-    MIRROR,
-    glm::vec3(1.0f, 1.0f, 1.0f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    glm::vec3(600.0f, 100.0f, -1000.0f),
-    1100.0f
-  );
+  Scene::push_matrix();
+  Scene::translate(2.8f, 2.8f, -1.5f);
+  box(10.4f, 0.4f, 0.4f, lamp);
+  Scene::pop_matrix();
 
-  Scene::quad(
-    DIFFUSE,
-    glm::vec3(0.5f, 0.5f, 0.5f),
-    glm::vec3(0.0f, 0.0f, 0.0f),
-    glm::vec3(-10000.0, -20.0, -10000.0),
-    glm::vec3(-10000.0, -20.0, 10000.0),
-    glm::vec3(10000.0, -20.0, 10000.0),
-    glm::vec3(10000.0, -20.0, -10000.0)
-  );
+  Scene::push_matrix();
+  Scene::translate(0.2f, 0.0f, -3.f+0.85f);
+  Table::render();
+  Scene::pop_matrix();
 }
 
 
@@ -156,8 +104,8 @@ int main(void)
     string cleaner("./cl/clearBuffers.cl");
     string image("png/out.png");
 
-    unsigned int size_w = 1000;
-    unsigned int size_h = 1000;
+    unsigned int size_w = 800;
+    unsigned int size_h = 800;
 
     uint32_t* frame_buffer = (uint32_t*)alloca(size_w*size_h*sizeof(uint32_t));
 
@@ -171,9 +119,8 @@ int main(void)
 
     try
     {
-      OpenCL ocl;
-      ocl.init();
-      CLHelper::init(size_w, size_h, kernel, cleaner, ocl);
+      Environment env = OpenCL::init();
+      CLHelper::init(size_w, size_h, kernel, cleaner, env);
       Scene::init(size_w, size_h);
       Scene::printInfo();
 
@@ -184,19 +131,15 @@ int main(void)
       while(!SDL::die)
       {
         SDL::handleEvents();
-        CLHelper::clearBuffers(ocl);
+        CLHelper::clearBuffers();
         samples++;
-        OpenCL::writeBufferBlocking(CLHelper::queue, CLHelper::samples_mem,
-          FLOAT_SIZE, &samples);
+        OpenCL::writeBufferBlocking(CLHelper::queue, CLHelper::samples_mem, &samples);
         CLHelper::render();
-        OpenCL::readBufferBlocking(CLHelper::queue, CLHelper::frame_c_mem,
-          size_w*size_h*sizeof(uint32_t), frame_buffer);
-        //for(int i=0; i<size_w*size_h; i++)
-          //cout << frame_buffer[i] << " ";
-        //SDL::die = true;
+        OpenCL::readBufferBlocking(CLHelper::queue, CLHelper::frame_c_mem, frame_buffer);
         SDL::drawFrame(frame_buffer);
-        //SDL::wait(100);
       }
+
+      env.release();
     }
     catch(OpenCLException& e)
     {

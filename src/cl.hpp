@@ -11,116 +11,156 @@ by remote i mean the GPU/CPU-internal memory
 and local is userspace
 */
 
-char const* translate_cl_error(cl_int error);
+#define SIZE_OF(x) ((size_t)sizeof(x))
+#define MEM_SIZE SIZE_OF(cl_mem)
 
-class OpenCLException
+namespace OpenCL
 {
-private:
-  cl_int error;
-  std::string message;
-public:
-  OpenCLException(cl_int err, std::string& msg);
-  virtual ~OpenCLException(void) {}
-  void print(void);
-};
 
-class OpenCL // TODO rewrite to namespace?
-{
-private:
-  cl_uint platform_count;
-  cl_platform_id* platform_ids;
-  cl_uint device_count;
-  cl_device_id* device_ids;
+  char const* translate_cl_error(cl_int error);
 
-  cl_context context;
+  class OpenCLException
+  {
+  private:
+    cl_int error;
+    std::string message;
+  public:
+    OpenCLException(cl_int err, std::string& msg);
+    virtual ~OpenCLException(void) {}
+    void print(void);
+  };
 
-  static cl_int error;
+  struct RemoteBuffer
+  {
+    size_t size;
+    cl_mem buffer;
+  };
 
-  #define print_platform_info(platform, param) \
-    _print_platform_info(platform, param, #param)
-  void _print_platform_info(unsigned int platform, cl_platform_info param, std::string param_name);
+  /**
+   * @param queue - The work queue
+   * @param remote_buffer - The remote buffer to write to
+   * @param data -> A pointer to *remote_buffer.size* bytes of data
+   */
+  void writeBufferBlocking(cl_command_queue& queue,
+    RemoteBuffer& remote_buffer, void* data);
 
-  #define list_devices(platform, type) \
-    _list_devices(platform, type, #type)
-  void _list_devices(unsigned int platform, cl_device_type type, std::string type_name);
+  /**
+   * @param queue - The work queue
+   * @param remote_buffer - The remote buffer to write to
+   * @param data -> A pointer to *remote_buffer.size* bytes
+   */
+  void readBufferBlocking(cl_command_queue& queue,
+    RemoteBuffer& remote_buffer, void* data);
 
-  #define print_device_info(device, param, type) \
-    _print_device_info<type>(device, param, #param)
-  template<typename T> void _print_device_info(unsigned int device, cl_device_info type, std::string type_name);
-public:
-  OpenCL(void);
+  class Environment
+  {
+  public:
+    Environment
+    (
+      cl_platform_id  const   platform,
+      cl_uint         const   dev_count,
+      cl_device_id*   const   dev_ids,
+      cl_context      const   cont
+    );
+    virtual ~Environment(void) {};
+
+    void release(void);
+
+    cl_platform_id  const   m_platform;
+    cl_uint         const   device_count;
+    cl_device_id*   const   device_ids;
+
+    cl_context      const   m_context;
+
+    /**
+     * Creates a remote buffer of *byte_size* bytes size and fills it with *bytes*
+     */
+    RemoteBuffer allocate_space(size_t byte_size, void* bytes);
+
+    /**
+     * Creates a command queue.
+     * @return A new command queue object
+     */
+    cl_command_queue createCommandQueue(void);
+
+  };
+
+  class Kernel
+  {
+  private:
+    std::string const file_path;
+    std::string const main_function;
+    cl_program        m_program;
+    cl_kernel         m_kernel;
+
+    void load(Environment& c);
+    void build(Environment& c);
+    void create_kernel(void);
+
+  public:
+    /**
+     * Prepares a Kernel object.
+     * @param fpath - File path to the kernel source code
+     * @param mname - Name of the main function
+     */
+    Kernel(std::string& fpath, std::string& mname);
+    virtual ~Kernel(void);
+
+    /**
+     * Loads the program and compiles it to a kernel
+     * @param c - The OpenCL context
+     */
+    void make(Environment& c);
+
+    /**
+     * Assigns the kernel parameters.
+     * @param nr - The position of the parameter [0..n-1]
+     * @param size - The size of the argument
+     * @param data - A pointer to the argument value
+     */
+    void set_argument(unsigned int nr, size_t size, void* data);
+    void set_argument(unsigned int nr, RemoteBuffer buf);
+
+    /**
+     * Put kernel(action) into queue
+     * Returns an event by which the computation can be identified
+     */
+    cl_event enqueue_kernel(size_t width, cl_command_queue& queue);
+    cl_event enqueue_kernel(size_t width, size_t height, cl_command_queue& queue);
+
+  };
+
   /**
    * Inits platform ids
    * Inits device ids from platform 0
    */
-  void init(void);
+  Environment init(void);
 
-  /**
-   * Frees platform ids
-   * Frees device ids
-   */
-  ~OpenCL(void);
+  #define print_platform_info(platform, param) \
+    _print_platform_info(platform, param, #param)
+  void _print_platform_info(cl_platform_id platform,
+    cl_platform_info param, std::string param_name);
 
-  /**
-   * Creates a remote buffer of byte_size bytes size
-   * and fills it with bytes
-   */
-  cl_mem allocate_space(size_t byte_size, void* bytes);
+  #define list_devices(platform, type) \
+    _list_devices(platform, type, #type)
+  std::pair<cl_uint, cl_device_id*> _list_devices(cl_platform_id platform,
+    cl_device_type type, std::string type_name);
 
-  /**
-   * Loads a program and compiles it to a kernel
-   * main function is identified by mainFunction
-   */
-  cl_kernel load_program(std::string& fpath, std::string& mainFunction);
+  #define print_device_info(device, param, type) \
+    _print_device_info<type>(device, param, #param)
+  template<typename T> void _print_device_info(cl_device_id device,
+    cl_device_info param, std::string param_name);
 
   /**
    * Blocks until the given event has been completed.
    */
-  static void waitForEvent(cl_event& e);
+  void waitForEvent(cl_event& e);
 
   /**
    * Returns the status code of the event. non-blocking.
    */
-  static cl_int getEventStatus(cl_event& e);
+  cl_int getEventStatus(cl_event& e);
 
-  /**
-   * the argunemt ar nr.th element to the kernel
-   */
-  static void setArgument(cl_kernel& kernel, int nr, int arg_size, void* arg);
-
-  /**
-   * Starts a command queue.
-   *
-   */
-  cl_command_queue createCommandQueue(void);
-
-  /**
-   * Put kernel(action) into queue
-   * Returns an event by which the computation can be identified
-   */
-  static cl_event enqueue_kernel(size_t width, cl_kernel& kernel, cl_command_queue& queue);
-  static cl_event enqueue_kernel(size_t width, size_t height, cl_kernel& kernel, cl_command_queue& queue);
-
-  /**
-   * Input:
-   * queue -> eventqueue
-   * buffer -> remote buffer to write to
-   * bytes -> number of bytes
-   * data -> data*
-   */
-  static void writeBufferBlocking(cl_command_queue& queue, cl_mem buffer, size_t bytes, void* data);
-
-  /**
-   * Input:
-   * localBuf -> pointer to local buffer
-   * bytes -> data size in bytes
-   * remoteBuf -> id by which the remote buffer can be identified
-   * queue -> queue in which the action was put
-   * Side effect:
-   * Waits for event to terminate, and copies bytes bytes from remoteBuf
-   * to localBuf
-   */
-  static void readBufferBlocking(cl_command_queue& queue, cl_mem remoteBuf, size_t bytes, void* localBuf);
-};
+}
 
 #endif

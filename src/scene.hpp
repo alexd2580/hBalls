@@ -41,6 +41,15 @@ triangle -> 16*4 byte
 
 namespace Scene
 {
+  struct Material
+  {
+    Material(uint8_t type, glm::vec3 passive, glm::vec3 active);
+    uint8_t type;
+    glm::vec3 passive;
+    glm::vec3 active;
+  };
+
+
   extern unsigned int size_w;
   extern unsigned int size_h;
 
@@ -65,18 +74,16 @@ namespace Scene
 
   //----------------------
 
-  void rotatev(float angle, glm::vec3 rotv);
-  void rotatef(float angle, float x, float y, float z);
-  void translatev(glm::vec3 dirv);
-  void translatef(float x, float y, float z);
+  void rotate(float angle, glm::vec3 rotv);
+  void rotate(float angle, float x, float y, float z);
+  void translate(glm::vec3 dirv);
+  void translate(float x, float y, float z);
 
   //Scene description
 
   void triangle
   (
-    uint8_t material,
-    glm::vec3 passive,
-    glm::vec3 active,
+    Material& material,
     glm::vec3 a,
     glm::vec3 b,
     glm::vec3 c
@@ -84,18 +91,14 @@ namespace Scene
 
   void sphere
   (
-    uint8_t material,
-    glm::vec3 passive,
-    glm::vec3 active,
+    Material& material,
     glm::vec3 pos,
     float r
   );
 
   void quad
   (
-    uint8_t material,
-    glm::vec3 passive,
-    glm::vec3 active,
+    Material& material,
     glm::vec3 a,
     glm::vec3 b,
     glm::vec3 c,

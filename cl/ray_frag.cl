@@ -295,7 +295,7 @@ float3 traceObjects
     private float3 brdf = (float3){ 1.0f, 1.0f, 1.0f };
     private float3 frag = (float3){ 0.0f, 0.0f, 0.0f };
 
-    for(private int itr=0; closest != 0 && itr < 100; itr++)
+    for(private int itr=0; closest != 0 && itr < 3; itr++)
     {
         material = ((global uchar*)closest)[1];
         passive = (float3){ closest[1], closest[2], closest[3] };
@@ -364,20 +364,22 @@ kernel void trace //main
     private int size_w = ((global int*)(fov+14))[0];
     private int size_h = ((global int*)(fov+14))[1];
 
+    /** Pixel coordinates **/
     const int pos_x = get_global_id(0);
     const int pos_y = get_global_id(1);
     const int id = pos_y * size_w + pos_x;
 
-    //x on screen == x in coordsystem
+    /** Relative coordinate system [-1..1]x[-1..1] **/
     private float rel_x = (2.0f * (float)pos_x / (float)size_w) - 1.0f;
     //y on screen goes down, y in coordsys goes up -> invert
-    private float rel_y = (2.0f * (float)-pos_y / (float)size_h) + 1.0f;
+    private float rel_y = -((2.0f * (float)pos_y / (float)size_h) - 1.0f);
 
     private float max_u = tan(fovy/2.0f);
     private float max_r = max_u*aspect;
 
     eyeDir += (rel_y*max_u*eyeUp - rel_x*max_r*eyeLeft);
     eyeDir = normalize(eyeDir); // TODO FIX THIS!!
+    eyeDir = sample_hemisphere(prng, eyeDir, 0.0f, 0.001f);
 
     private float3 frag;
     private float3 res[2];

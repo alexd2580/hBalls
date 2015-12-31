@@ -49,7 +49,7 @@ namespace SDL
 	  window_w = ppp * image_w;
 	  window_h = ppp * image_h;*/
 
-		window = SDL_CreateWindow("RayTracer", 100, 100, image_w, image_h, SDL_WINDOW_SHOWN);
+		window = SDL_CreateWindow("hBalls", 100, 100, image_w, image_h, SDL_WINDOW_SHOWN);
 		if(window == nullptr)
 		{
 			cerr << "[SDL] Could not create window: " << SDL_GetError() << endl;

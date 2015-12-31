@@ -11,26 +11,26 @@ namespace CLHelper
   /**
    * Buffers on GPU
    */
-  cl_mem /*float */ fov_mem;
-  cl_mem /*float */ objects_mem;
-  cl_mem /*char4 */ frame_c_mem;
-  cl_mem /*float4*/ frame_f_mem;
-  cl_mem /*float */ samples_mem;
-  cl_mem /*PRNG  */ prng_mem;
+  OpenCL::RemoteBuffer /*float */ fov_mem;
+  OpenCL::RemoteBuffer /*float */ objects_mem;
+  OpenCL::RemoteBuffer /*char4 */ frame_c_mem;
+  OpenCL::RemoteBuffer /*float4*/ frame_f_mem;
+  OpenCL::RemoteBuffer /*float */ samples_mem;
+  OpenCL::RemoteBuffer /*PRNG  */ prng_mem;
 
   cl_command_queue queue;
-  cl_kernel raytracer;
-  cl_kernel bufferCleaner;
+  OpenCL::Kernel* path_tracer;
+  OpenCL::Kernel* buffer_cleaner;
 
   unsigned int size_w;
   unsigned int size_h;
 
-  void clearBuffers(OpenCL& cl)
+  void clearBuffers(void)
   {
-    cl.enqueue_kernel(size_w*size_h, bufferCleaner, queue);
+    buffer_cleaner->enqueue_kernel(size_w*size_h, queue);
   }
 
-  void init(unsigned int w, unsigned int h, string& tracepath, string& cleanpath, OpenCL& cl)
+  void init(unsigned int w, unsigned int h, string& tracepath, string& cleanpath, OpenCL::Environment& cl)
   {
     cout << "[CLHelper] Initializing." << endl;
 
@@ -47,36 +47,40 @@ namespace CLHelper
     queue = cl.createCommandQueue();
 
     string clearBufferMain("clearBuffers");
-    bufferCleaner = cl.load_program(cleanpath, clearBufferMain);
     string tracerMain("trace");
-    raytracer = cl.load_program(tracepath, tracerMain);
 
-    OpenCL::setArgument(bufferCleaner, 0, MEM_SIZE, &frame_c_mem);
-    OpenCL::setArgument(bufferCleaner, 1, MEM_SIZE, &frame_f_mem);
+    buffer_cleaner = new OpenCL::Kernel(cleanpath, clearBufferMain);
+    path_tracer = new OpenCL::Kernel(tracepath, tracerMain);
 
-    OpenCL::setArgument(raytracer, 0, MEM_SIZE, &fov_mem);
-    OpenCL::setArgument(raytracer, 1, MEM_SIZE, &objects_mem);
-    OpenCL::setArgument(raytracer, 2, MEM_SIZE, &frame_c_mem);
-    OpenCL::setArgument(raytracer, 3, MEM_SIZE, &frame_f_mem);
-    OpenCL::setArgument(raytracer, 4, MEM_SIZE, &samples_mem);
-    OpenCL::setArgument(raytracer, 5, MEM_SIZE, &prng_mem);
+    buffer_cleaner->make(cl);
+    path_tracer->make(cl);
+
+    buffer_cleaner->set_argument(0, frame_c_mem);
+    buffer_cleaner->set_argument(1, frame_f_mem);
+
+    path_tracer->set_argument(0, fov_mem);
+    path_tracer->set_argument(1, objects_mem);
+    path_tracer->set_argument(2, frame_c_mem);
+    path_tracer->set_argument(3, frame_f_mem);
+    path_tracer->set_argument(4, samples_mem);
+    path_tracer->set_argument(5, prng_mem);
 
     // Init prng
     unsigned long prng[17];
     for (auto i = 0; i < 16; i++)
       prng[i] = (unsigned long)rand() << 32 | (unsigned long)rand();
     prng[16] = 0;
-    OpenCL::writeBufferBlocking(queue, prng_mem, 17*ULONG_SIZE, prng);
+    OpenCL::writeBufferBlocking(queue, prng_mem, prng);
 
-    clearBuffers(cl);
+    clearBuffers();
     cout << "[CLHelper] Done." << endl;
   }
 
   void close(void)
   {
     cout << "[CLHelper] Closing." << endl;
-    clReleaseKernel(bufferCleaner);
-    clReleaseKernel(raytracer);
+    delete buffer_cleaner;
+    delete path_tracer;
 
     clReleaseCommandQueue(queue);
     cout << "[CLHelper] Closed." << endl;
@@ -90,13 +94,13 @@ namespace CLHelper
     size = (size+1) * FLOAT_SIZE;
     *((uint8_t*)Scene::objects_buffer_i) = END;
 
-    OpenCL::writeBufferBlocking(queue, objects_mem, size, Scene::objects_buffer_start);
+    OpenCL::writeBufferBlocking(queue, objects_mem, Scene::objects_buffer_start);
   }
 
   void render(void)
   {
       cout << "[CLHelper] Rendering." << endl;
-      OpenCL::enqueue_kernel(size_w, size_h, raytracer, queue);
+      path_tracer->enqueue_kernel(size_w, size_h, queue);
       clFinish(queue);
   }
 }
