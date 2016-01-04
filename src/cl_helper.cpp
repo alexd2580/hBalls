@@ -1,105 +1,145 @@
 
-#include<iostream>
-#include<vector>
-#include"cl_helper.hpp"
-#include"scene.hpp"
+#include <iostream>
+#include <vector>
+#include <cstring>
+
+#include "cl_helper.hpp"
 
 using namespace std;
+using namespace OpenCL;
 
 namespace CLHelper
 {
-  /**
-   * Buffers on GPU
-   */
-  OpenCL::RemoteBuffer /*float */ fov_mem;
-  OpenCL::RemoteBuffer /*float */ objects_mem;
-  OpenCL::RemoteBuffer /*char4 */ frame_c_mem;
-  OpenCL::RemoteBuffer /*float4*/ frame_f_mem;
-  OpenCL::RemoteBuffer /*float */ samples_mem;
-  OpenCL::RemoteBuffer /*PRNG  */ prng_mem;
+/**
+ * Local buffer
+ */
+float* octree_buffer;
 
-  cl_command_queue queue;
-  OpenCL::Kernel* path_tracer;
-  OpenCL::Kernel* buffer_cleaner;
+/**
+ * The OpenCL environment.
+ */
+Environment const* environment;
 
-  unsigned int size_w;
-  unsigned int size_h;
+/**
+ * Buffers on GPU
+ */
+RemoteBuffer /*float */ fov_mem;
+RemoteBuffer /*float */ objects_mem;
+RemoteBuffer /*float */ octree_mem;
+RemoteBuffer /*char4 */ frame_c_mem;
+RemoteBuffer /*float4*/ frame_f_mem;
+RemoteBuffer /*float */ samples_mem;
+RemoteBuffer /*PRNG  */ prng_mem;
 
-  void clearBuffers(void)
-  {
-    buffer_cleaner->enqueue_kernel(size_w*size_h, queue);
-  }
+cl_command_queue queue;
 
-  void init(unsigned int w, unsigned int h, string& tracepath, string& cleanpath, OpenCL::Environment& cl)
-  {
-    cout << "[CLHelper] Initializing." << endl;
+unsigned int size_w;
+unsigned int size_h;
 
-    size_w = w;
-    size_h = h;
+void clear_buffers(Kernel const& cleaner)
+{
+  cleaner.enqueue_kernel(size_w * size_h, queue);
+}
 
-    frame_c_mem = cl.allocate_space(size_h*size_w*sizeof(uint32_t), nullptr);
-    frame_f_mem = cl.allocate_space(size_h*size_w*4*FLOAT_SIZE, nullptr);
-    fov_mem = cl.allocate_space(16*FLOAT_SIZE, nullptr);
-    objects_mem = cl.allocate_space(MAX_PRIMITIVES*14*FLOAT_SIZE, nullptr);
-    samples_mem = cl.allocate_space(FLOAT_SIZE, nullptr);
-    prng_mem = cl.allocate_space(17*ULONG_SIZE, nullptr);
+void init(unsigned int const w,
+          unsigned int const h,
+          Kernel& tracer,
+          Kernel& cleaner,
+          size_t const primitive_size,
+          size_t const octree_size)
+{
+  cout << "[CLHelper] Initializing." << endl;
 
-    queue = cl.createCommandQueue();
+  environment = OpenCL::init();
 
-    string clearBufferMain("clearBuffers");
-    string tracerMain("trace");
+  size_w = w;
+  size_h = h;
 
-    buffer_cleaner = new OpenCL::Kernel(cleanpath, clearBufferMain);
-    path_tracer = new OpenCL::Kernel(tracepath, tracerMain);
+  octree_buffer = new float[primitive_size];
 
-    buffer_cleaner->make(cl);
-    path_tracer->make(cl);
+  // Init prng
+  unsigned long prng[17];
+  for (auto i = 0; i < 16; i++)
+    prng[i] = (unsigned long)rand() << 32 | (unsigned long)rand();
+  prng[16] = 0;
 
-    buffer_cleaner->set_argument(0, frame_c_mem);
-    buffer_cleaner->set_argument(1, frame_f_mem);
+  fov_mem = environment->allocate_space(16 * sizeof(float), nullptr);
+  objects_mem =
+      environment->allocate_space(primitive_size * sizeof(float), nullptr);
+  octree_mem =
+      environment->allocate_space(octree_size * sizeof(float), nullptr);
+  frame_c_mem =
+      environment->allocate_space(size_h * size_w * sizeof(uint32_t), nullptr);
+  frame_f_mem =
+      environment->allocate_space(size_h * size_w * 4 * sizeof(float), nullptr);
+  samples_mem = environment->allocate_space(sizeof(float), nullptr);
+  prng_mem = environment->allocate_space(17 * sizeof(unsigned int), prng);
 
-    path_tracer->set_argument(0, fov_mem);
-    path_tracer->set_argument(1, objects_mem);
-    path_tracer->set_argument(2, frame_c_mem);
-    path_tracer->set_argument(3, frame_f_mem);
-    path_tracer->set_argument(4, samples_mem);
-    path_tracer->set_argument(5, prng_mem);
+  queue = environment->createCommandQueue();
 
-    // Init prng
-    unsigned long prng[17];
-    for (auto i = 0; i < 16; i++)
-      prng[i] = (unsigned long)rand() << 32 | (unsigned long)rand();
-    prng[16] = 0;
-    OpenCL::writeBufferBlocking(queue, prng_mem, prng);
+  tracer.make(*environment);
+  cleaner.make(*environment);
 
-    clearBuffers();
-    cout << "[CLHelper] Done." << endl;
-  }
+  cleaner.set_argument(0, frame_c_mem);
+  cleaner.set_argument(1, frame_f_mem);
 
-  void close(void)
-  {
-    cout << "[CLHelper] Closing." << endl;
-    delete buffer_cleaner;
-    delete path_tracer;
+  tracer.set_argument(0, fov_mem);
+  tracer.set_argument(1, objects_mem);
+  tracer.set_argument(2, octree_mem);
+  tracer.set_argument(3, frame_c_mem);
+  tracer.set_argument(4, frame_f_mem);
+  tracer.set_argument(5, samples_mem);
+  tracer.set_argument(6, prng_mem);
 
+  clear_buffers(cleaner);
+  cout << "[CLHelper] Done." << endl;
+}
+
+void close(void)
+{
+  cout << "[CLHelper] Closing." << endl;
+  if (queue != nullptr)
     clReleaseCommandQueue(queue);
-    cout << "[CLHelper] Closed." << endl;
-  }
-
-  void pushScene(void)
+  // release buffers or something
+  if (octree_buffer != nullptr)
+    delete[] octree_buffer;
+  if (environment != nullptr)
   {
-    cout << "[CLHelper] Pushing scene definition." << endl;
-
-    size_t size = Scene::objects_buffer_i - Scene::objects_buffer_start;
-    size = (size+1) * FLOAT_SIZE;
-    *((uint8_t*)Scene::objects_buffer_i) = END;
-
-    OpenCL::writeBufferBlocking(queue, objects_mem, Scene::objects_buffer_start);
+    environment->release();
+    delete environment;
   }
+  cout << "[CLHelper] Closed." << endl;
+}
 
-  void render(void)
-  {
-      path_tracer->enqueue_kernel(size_w, size_h, queue);
-      clFinish(queue);
-  }
+void push_scene(Scene const& scene)
+{
+  cout << "[CLHelper] Pushing scene definition." << endl;
+
+  size_t size = scene.objects_byte_size();
+  (void)size;
+  // TODO fix writeBuffer, so that is doesn't copy EVERYTHING
+  float const* data = scene.get_objects();
+  writeBufferBlocking(queue, objects_mem, data);
+
+  Octree const* octree = scene.get_octree();
+  size = octree->print_to_array(octree_buffer);
+  // TODO size
+  writeBufferBlocking(queue, octree_mem, octree_buffer);
+}
+
+void render(Kernel const& tracer)
+{
+  tracer.enqueue_kernel(size_w, size_h, queue);
+  clFinish(queue);
+}
+
+void write_buffer(RemoteBuffer const& buffer, void* data)
+{
+  writeBufferBlocking(queue, buffer, data);
+}
+
+void read_buffer(RemoteBuffer const& buffer, void* data)
+{
+  readBufferBlocking(queue, buffer, data);
+}
 }

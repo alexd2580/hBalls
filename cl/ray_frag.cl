@@ -15,7 +15,8 @@ sphere -> 11*4 byte
 triangle -> 16*4 byte
 **/
 
-#define END 0
+#define HEADER_SIZE 7 //floats
+
 #define TRIANGLE 1
 #define SPHERE 2
 
@@ -137,68 +138,76 @@ inline float3 sample_hemisphere(global PRNG* prng, float3 dir, float power, floa
 
 void traceTriangle
 (
-    private float3 eyePos,
-    private float3 eyeDir, //normalized
-    global float* triangle,
-    private float* depth,
+    private float3 eye_pos,
+    private float3 eye_dir, //normalized
+    global float* triangle_,
+    global float** closest,
+    private float* min_depth,
     private float3 res[]
 )
 {
+    global float* triangle = triangle_ + HEADER_SIZE;
     float3 a = (float3){triangle[0], triangle[1], triangle[2]};
     float3 b = (float3){triangle[3], triangle[4], triangle[5]};
     float3 c = (float3){triangle[6], triangle[7], triangle[8]};
-    float3 toA = a - eyePos;
-    float3 toB = b - eyePos;
-    float3 toC = c - eyePos;
 
-    float3 crossV;
-    crossV = cross(toB, toA);
-    if(dot(eyeDir, crossV) < 0.0f)
-        return;
-    crossV = cross(toC, toB);
-    if(dot(eyeDir, crossV) < 0.0f)
-        return;
-    crossV = cross(toA, toC);
-    if(dot(eyeDir, crossV) < 0.0f)
-        return;
+    float3 atob = b-a;
+    float3 atoc = c-a;
 
-    float3 aToB = b - a;
-    float3 aToC = c - a;
-    float3 normal = normalize(cross(aToB, aToC));
+    //Begin calculating determinant - also used to calculate u parameter
+    float3 P = cross(eye_dir, atoc);
+    //if determinant is near zero, ray lies in plane of triangle
+    float det = dot(atob, P);
 
-    float ortho_dist = dot(eyePos-a, normal);
-    float ortho_per_step = -dot(eyeDir, normal);
+    if(det < 0.00001f)
+      return;
 
-    float dist = ortho_dist / ortho_per_step;
+    float inv_det = 1.0f / det;
+    //calculate distance from V1 to ray origin
+    float3 T = eye_pos - a;
 
-    if(dist > *depth || dist <= 0.0f)
-      return; //there was a closer point before, drop;
+    //Calculate u parameter and test bound
+    float u = dot(T, P) * inv_det;
+    //The intersection lies outside of the triangle
+    if(u < 0.0f || u > 1.0f) return;
 
-    float3 planePos = eyePos + dist * eyeDir;
+    //Prepare to test v parameter
+    float3 Q = cross(T, atob);
 
-    //--------------------
+    //Calculate v parameter and test bound
+    float v = dot(eye_dir, Q) * inv_det;
+    //The intersection lies outside of the triangle
+    if(v < 0.0f || u + v  > 1.0f) return;
 
-    res[0] = planePos;
-    res[1] = normal;
-    *depth = dist;
+    float dist = dot(atoc, Q) * inv_det;
+    if(dist > 0.00001f && dist < *min_depth)
+    {
+      res[0] = eye_pos + dist*eye_dir;
+      res[1] = normalize(cross(atob, atoc));
+      *min_depth = dist;
+      *closest = triangle_;
+      return;
+    }
     return;
 }
 
 void traceSphere
 (
-    private float3 eyePos,
-    private float3 eyeDir, //normalized
-    global float* sphere,
+    private float3 eye_pos,
+    private float3 eye_dir, //normalized
+    global float* sphere_,
+    global float** closest,
     private float* min_depth,
     private float3 res[]
 )
 {
+    global float* sphere = sphere_ + HEADER_SIZE;
     float3 center = (float3){sphere[0], sphere[1], sphere[2]};
     float radius = sphere[3];
 
-    float3 eyeToSphere = center-eyePos;
+    float3 eyeToSphere = center-eye_pos;
     /* View axis distance */
-    float dX1 = dot(eyeDir, eyeToSphere);
+    float dX1 = dot(eye_dir, eyeToSphere);
     if(dX1 <= 0)
       return;
 
@@ -219,119 +228,129 @@ void traceSphere
     if(dX1 > *min_depth)
         return;
 
-    res[0] = eyePos + dX1*eyeDir;
-    res[1] = normalize(res[0] - center);
     *min_depth = dX1;
+    *closest = sphere_;
+    res[0] = eye_pos+dX1*eye_dir;
+    res[1] = normalize(res[0] - center);
+
     return;
+}
+
+private bool intersects_cube
+(
+    private float3 eye_pos,
+    private float3 eye_dir, //normalized
+    private float3 lower,
+    private float3 upper
+)
+{
+    private float latest_entry = 1.0f/0.0f;
+    private float earliest_exit = -1.0f/0.0f;
+
+    if(eye_dir.x == 0.0f)
+    {
+        if(eye_pos.x < lower.x || eye_pos.x > upper.x)
+            return false;
+    }
+    if(eye_dir.y == 0.0f)
+    {
+        if(eye_pos.y < lower.y || eye_pos.y > upper.y)
+            return false;
+    }
+    if(eye_dir.z == 0.0f)
+    {
+        if(eye_pos.z < lower.z || eye_pos.z > upper.z)
+            return false;
+    }
+
+    private float lower_intersect, upper_intersect;
+    lower_intersect = lower.x - eye_pos.x / eye_dir.x;
+    upper_intersect = upper.x - eye_pos.x / eye_dir.x;
+    latest_entry = max(latest_entry, min(lower_intersect, upper_intersect));
+    earliest_exit = min(earliest_exit, max(lower_intersect, upper_intersect));
+    lower_intersect = lower.y - eye_pos.y / eye_dir.y;
+    upper_intersect = upper.y - eye_pos.y / eye_dir.y;
+    latest_entry = max(latest_entry, min(lower_intersect, upper_intersect));
+    earliest_exit = min(earliest_exit, max(lower_intersect, upper_intersect));
+    lower_intersect = lower.z - eye_pos.z / eye_dir.z;
+    upper_intersect = upper.z - eye_pos.z / eye_dir.z;
+    latest_entry = max(latest_entry, min(lower_intersect, upper_intersect));
+    earliest_exit = min(earliest_exit, max(lower_intersect, upper_intersect));
+
+    return latest_entry < earliest_exit && earliest_exit > 0.0f;
 }
 
 global float* runTraceObjects
 (
-    private float3 eyePos,
-    private float3 eyeDir, //normalized
+    private float3 eye_pos,
+    private float3 eye_dir, //normalized
     global float* objects,
+    global float* octree,
     private float3 res[]
 )
 {
+    global float* object;
     global float* closest = 0;
-    private uchar type = ((global uchar*)objects)[0];
+    private uchar type = *((global uchar*)objects);
     private float min_depth = 1.0f / 0.0f;
-    private float depth = min_depth;
 
-    while(type != END) // type 0 is END
+    global float* octrees_todo[500]; // TODO analyze approximation
+    octrees_todo[0] = octree;
+    octrees_todo[1] = 0;
+    int index = 0;
+    int next_free = 1;
+
+    private float3 lower;
+    private float3 upper;
+    private int size;
+
+    global float* cur_octree;
+    global int* cur_octree_i;
+
+    while(index < next_free)
     {
-        switch(type)
+        cur_octree = octrees_todo[index];
+        index++;
+
+        lower = (float3){ cur_octree[0], cur_octree[1], cur_octree[2] };
+        upper = (float3){ cur_octree[3], cur_octree[4], cur_octree[5] };
+        if(!intersects_cube(eye_pos, eye_dir, lower, upper))
+            continue;
+
+        cur_octree_i = (global int*)(cur_octree+6);
+        size = *cur_octree_i;
+        cur_octree_i++;
+        for(int i=0; i<size; i++)
         {
-        case TRIANGLE: // +7 skip header
-            traceTriangle(eyePos, eyeDir, objects+7, &depth, res);
-            break;
-        case SPHERE:
-            traceSphere(eyePos, eyeDir, objects+7, &depth, res);
-            break;
-        default:
-            break;
+            object = objects + *cur_octree_i;
+            cur_octree_i++;
+            type = *(global uchar*)object;
+            switch(type)
+            {
+            case TRIANGLE:
+                //traceTriangle(eye_pos, eye_dir, object, &closest, &min_depth, res);
+                break;
+            case SPHERE:
+                //traceSphere(eye_pos, eye_dir, object, &closest, &min_depth, res);
+                break;
+            default:
+                break;
+            }
         }
 
-        if(depth < min_depth)
+        int offset;
+        for(int i=0; i<8; i++)
         {
-            min_depth = depth;
-            closest = objects;
+            offset = *cur_octree_i;
+            cur_octree_i++;
+            if(offset != -1)
+            {
+                octrees_todo[next_free] = cur_octree + offset;
+                //next_free++;
+            }
         }
-
-        // go to next
-        switch(type)
-        {
-        case TRIANGLE:
-          objects += 7 + 9;
-          break;
-        case SPHERE:
-          objects += 7 + 4;
-          break;
-        }
-
-        type = ((global uchar*)objects)[0];
     }
     return closest;
-}
-
-float3 traceObjects
-(
-    private float3    eyePos,
-    private float3    eyeDir, //normalized
-    global  float*    objects,
-    private float3    res[],
-    global  PRNG*     prng
-)
-{
-    global float* closest = runTraceObjects(eyePos, eyeDir, objects, res);
-
-    private float3 pos;
-    private float3 normal;
-
-    private uchar material;
-    private float3 passive;
-    private float3 active;
-
-    private float3 brdf = (float3){ 1.0f, 1.0f, 1.0f };
-    private float3 frag = (float3){ 0.0f, 0.0f, 0.0f };
-
-    for(private int itr=0; closest != 0 && itr < 5; itr++)
-    {
-        material = ((global uchar*)closest)[1];
-        passive = (float3){ closest[1], closest[2], closest[3] };
-        active = (float3){ closest[4], closest[5], closest[6] };
-        pos = res[0];
-        normal = res[1];
-
-        frag += active * brdf;
-
-        switch(material)
-        {
-        case DIFFUSE:
-            eyePos = pos;
-            eyeDir = oriented_uniform_sample_hemisphere(prng, normal);
-            brdf *= 2.0f * passive * dot(normal, eyeDir);
-            break;
-        case MIRROR:
-            eyePos = pos;
-            eyeDir = reflect(eyeDir, normal);
-            break;
-        case METALLIC:
-            eyePos = pos;
-            eyeDir = reflect(eyeDir, normal);
-            eyeDir = sample_hemisphere(prng, eyeDir, 1.f, 1.f);
-            break;
-        /*case GLASS:
-            break;
-        default:
-            break;*/
-        }
-
-        private float dth = 1.0f/0.0f; //reset
-        closest = runTraceObjects(eyePos, eyeDir, objects, res);
-    }
-
-    return frag;
 }
 
 /*
@@ -341,13 +360,14 @@ posx, posy, posz,
 dirx, diry, dirz,
 upx, upy, upz,
 leftx, lefty, leftz,
-size_x, size_y <-- OMG IT'S TWO INTS!!
+size_x, size_y <--- TWO INTS!
 */
 
 kernel void trace //main
 (
     global float*   fov,
     global float*   objects,
+    global float*   octree,
     global uint*    frame_c,
     global float4*  frame_f,
     global float*   samples,
@@ -357,10 +377,10 @@ kernel void trace //main
     private float fovy = fov[0];
     private float aspect = fov[1];
 
-    private float3 eyePos = (float3){ fov[2], fov[3], fov[4] };
-    private float3 eyeDir = (float3){ fov[5], fov[6], fov[7] };
-    private float3 eyeUp = (float3){ fov[8], fov[9], fov[10] };
-    private float3 eyeLeft = (float3){ fov[11], fov[12], fov[13] };
+    private float3 eye_pos = (float3){ fov[2], fov[3], fov[4] };
+    private float3 eye_dir = (float3){ fov[5], fov[6], fov[7] };
+    private float3 eye_up = (float3){ fov[8], fov[9], fov[10] };
+    private float3 eye_left = (float3){ fov[11], fov[12], fov[13] };
     private int size_w = ((global int*)(fov+14))[0];
     private int size_h = ((global int*)(fov+14))[1];
 
@@ -377,15 +397,61 @@ kernel void trace //main
     private float max_u = tan(fovy/2.0f);
     private float max_r = max_u*aspect;
 
-    eyeDir += (rel_y*max_u*eyeUp - rel_x*max_r*eyeLeft);
-    eyeDir = normalize(eyeDir); // TODO FIX THIS!!
-    eyeDir = sample_hemisphere(prng, eyeDir, 0.0f, 0.001f);
+    eye_dir += (rel_y*max_u*eye_up - rel_x*max_r*eye_left);
+    eye_dir = normalize(eye_dir); // TODO FIX THIS!!
+    eye_dir = sample_hemisphere(prng, eye_dir, 0.0f, 0.001f);
 
-    private float3 frag;
+    private float3 frag = (float3){ 0.0f, 0.0f, 0.0f };
     private float3 res[2];
 
     //------------------------------------------------------------------------//
-      frag = traceObjects(eyePos, eyeDir, objects, res, prng);
+
+    private float3 pos;
+    private float3 normal;
+
+    private uchar material;
+    private float3 passive;
+    private float3 active;
+
+    private float3 brdf = (float3){ 1.0f, 1.0f, 1.0f };
+
+    global float* closest = 0;
+    for(private uint itr=0; itr < 5 && dot(brdf, brdf) > 0.9f; itr++)
+    {
+        closest = runTraceObjects(eye_pos, eye_dir, objects, octree, res);
+        if(closest == 0)
+          break; // nothing hit
+        material = ((global uchar*)closest)[1];
+        passive = (float3){ closest[1], closest[2], closest[3] };
+        active = (float3){ closest[4], closest[5], closest[6] };
+        pos = res[0];
+        normal = res[1];
+
+        frag += active * brdf;
+
+        switch(material)
+        {
+        case DIFFUSE:
+            eye_pos = pos;
+            eye_dir = oriented_uniform_sample_hemisphere(prng, normal);
+            brdf *= 2.0f * passive * dot(normal, eye_dir);
+            break;
+        case MIRROR:
+            eye_pos = pos;
+            eye_dir = reflect(eye_dir, normal);
+            break;
+        case METALLIC:
+            eye_pos = pos;
+            eye_dir = reflect(eye_dir, normal);
+            eye_dir = sample_hemisphere(prng, eye_dir, 1.f, 1.f);
+            break;
+        /*case GLASS:
+            break;
+        default:
+            break;*/
+        }
+    }
+
     //------------------------------------------------------------------------//
 
     private float4 total = frame_f[id] + (float4){frag.x, frag.y, frag.z, 0.0};

@@ -1,287 +1,273 @@
-#include<iostream>
-#include<cstdlib>
-#include<cstring>
-#include<cmath>
-#include<string>
-#include<stack>
-#include<vector>
-#include<glm/glm.hpp>
-#include<glm/gtc/matrix_transform.hpp>
-#include<glm/gtc/matrix_access.hpp>
+#include <iostream>
+#include <cstdlib>
+#include <cstring>
+#include <cmath>
+#include <string>
+#include <stack>
+#include <vector>
+#include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/matrix_access.hpp>
 
-
-#define __USE_BSD	//to get usleep
+#define __USE_BSD // to get usleep
 #include <unistd.h>
 
-#include"scene.hpp"
+#include "scene.hpp"
 
 using namespace std;
 
-namespace Scene
+Material::Material(uint8_t type_,
+                   float roughness_,
+                   glm::vec3 passive_,
+                   glm::vec3 active_)
+    : type(type_), roughness(roughness_), passive(passive_), active(active_)
 {
-  Material::Material(uint8_t type_, glm::vec3 passive_, glm::vec3 active_)
-    : type(type_), passive(passive_), active(active_)
-  {
-  }
-
-  /* SCREEN SIZES */
-  unsigned int size_w;
-  unsigned int size_h;
-
-  int view_min_x;
-  int view_max_x;
-  int view_min_y;
-  int view_max_y;
-  /* SCREEN SIZES */
-
-  /**
-   * Local Buffers
-   */
-  uint8_t*        frame_buffer;
-
-  float*          objects_buffer_start; //data items MUST be aligned! max(type T) = 4byte
-  float*          objects_buffer_i;
-  float*          objects_buffer_end;
-
-  /**
-   * Matrix stack for model matrix
-   */
-  stack<glm::mat4> model_s;
-
-  /**
-   * Pop a model matrix
-   */
-  void pop_matrix(void)
-  {
-      model_s.pop();
-  }
-
-  /**
-   * Overwrites the current active top-stack matrix
-   */
-  void put_matrix(glm::mat4& mat)
-  {
-      model_s.top() = mat;
-  }
-
-  /**
-   * Push a matrix, copy the old one to the current one
-   * If there was no matrix on the stack, then set it to I
-   */
-  void push_matrix(void)
-  {
-      if(model_s.size() == 0)
-        model_s.push(glm::mat4(1.0));
-      else
-      {
-        glm::mat4 last = model_s.top();
-        model_s.push(last);
-      }
-  }
-
-  void load_identity(void)
-  {
-    glm::mat4 mat(1.0);
-    put_matrix(mat);
-  }
-
-  /**
-   * Returns a copy of the current active top-stack matrix
-   */
-  __attribute__((pure)) glm::mat4 get_matrix(void)
-  {
-      return model_s.top();
-  }
-
-  /**
-   * Data structure used in vertex buffers.
-   * It's an interleaved list, containing
-   * dpos -> ndc coords
-   * dpos_i -> integer pixel position
-   * pos -> world pos
-   * normal -> normal vector
-   * color -> a float color value [0..1]
-   */
-
-  typedef struct interleave_ interleave;
-  struct interleave_ // TODO what is this?
-  {
-      glm::vec3 pos;
-      float color;
-  };
-
-  void printInfo(void)
-  {
-    cout << "OpenCGL info - current state:" << endl;
-    cout << "Size: w=" << size_w << " h=" << size_h << endl;
-    cout << "Viewport: x=" << view_min_x << "->" << view_max_x << " ";
-    cout << "y=" << view_min_y << "->" << view_max_y << endl;
-    cout << endl;
-  }
-
-  void init(unsigned int w, unsigned int h)
-  {
-      size_w = w;
-      size_h = h;
-
-      view_min_x = -((int)size_w/2);
-      view_max_x = size_w/2;
-      view_min_y = -((int)size_h/2);
-      view_max_y = size_h/2;
-
-      frame_buffer  = (uint8_t*)        malloc(size_h*size_w*sizeof(uint8_t));
-      objects_buffer_start = (float*)   malloc(MAX_PRIMITIVES*16*FLOAT_SIZE);
-      objects_buffer_i = objects_buffer_start;
-      objects_buffer_end = objects_buffer_start + MAX_PRIMITIVES*16*FLOAT_SIZE;
-
-      push_matrix();
-  }
-
-  void clearBuffers(void)
-  {
-    objects_buffer_i = objects_buffer_start;
-  }
-
-  /*#include"pngwrapper.hpp"
-
-  void printScreen(string& fpath, OpenCL& cl)
-  {
-      flushRTBuffer(cl);
-      cout << "Reading buffer" << endl;
-      OpenCL::readBufferBlocking(framebufferqueue,
-        frameBuf_mem, size_w*size_h*sizeof(uint8_t), frame_buffer);
-      cout << "Saving to file" << endl;
-      saveBWToFile(frame_buffer, size_w, size_h, fpath);
-      cout << "Done" << endl;
-      cout.flush();
-  }*/
-
-  void rotate(float angle, float x, float y, float z)
-  {
-      rotate(angle, glm::vec3(x,y,z));
-  }
-
-  void rotate(float angle, glm::vec3 rotv)
-  {
-    const glm::mat4 rotate = glm::rotate(model_s.top(), angle, rotv);
-    model_s.top() = rotate;
-  }
-
-  void translate(glm::vec3 dirv)
-  {
-    const glm::mat4 translate = glm::translate(model_s.top(), dirv);
-    model_s.top() = translate;
-  }
-
-  void translate(float x, float y, float z)
-  {
-      translate(glm::vec3(x,y,z));
-  }
-
-  /*glm::vec3 performModelTransform(glm::vec3 a)
-  {
-      glm::vec4 withW(a, 1.0f);
-      glm::vec4 res = model_s.top() * withW;
-      return glm::vec3(res);
-  }*/
-
-  //---------------------------------------
-
-  void push_vec3(glm::vec3& v)
-  {
-    objects_buffer_i[0] = v.x;
-    objects_buffer_i[1] = v.y;
-    objects_buffer_i[2] = v.z;
-    objects_buffer_i += 3;
-  }
-
-  void push_vertex(glm::vec3& v)
-  {
-    glm::vec3 res = glm::vec3(model_s.top() * glm::vec4(v, 1.0f));
-    push_vec3(res);
-  }
-
-  // Pushes the object to the objects_buffer at byte index freeOffset_r
-  void push_header
-  (
-    uint8_t type,
-    Material& material
-  )
-  {
-      uint8_t* thisObj_u = (uint8_t*)objects_buffer_i;
-      thisObj_u[0] = type;
-      thisObj_u[1] = material.type;
-      objects_buffer_i++;
-      push_vec3(material.passive);
-      push_vec3(material.active);
-  }
-
-  void triangle
-  (
-    Material& material,
-    glm::vec3 a,
-    glm::vec3 b,
-    glm::vec3 c
-  )
-  {
-    push_header(TRIANGLE, material);
-    push_vertex(a);
-    push_vertex(b);
-    push_vertex(c);
-  }
-
-  void sphere
-  (
-    Material& material,
-    glm::vec3 pos,
-    float radius
-  )
-  {
-    push_header(SPHERE, material);
-    push_vertex(pos);
-    *objects_buffer_i = radius;
-    objects_buffer_i++;
-  }
-
-  void quad
-  (
-    Material& material,
-    glm::vec3 a,
-    glm::vec3 b,
-    glm::vec3 c,
-    glm::vec3 d
-  )
-  {
-    push_header(TRIANGLE, material);
-    push_vertex(a);
-    push_vertex(b);
-    push_vertex(c);
-    push_header(TRIANGLE, material);
-    push_vertex(a);
-    push_vertex(c);
-    push_vertex(d);
-  }
-
-  /*
-      case TRIANGLE_FAN:
-          c_triangle[c_vertex_count] = performModelTransform(vertex);
-          c_vertex_count++;
-          if(c_vertex_count == 3)
-          {
-            push_object();
-            c_triangle[1] = c_triangle[2];
-            c_vertex_count = 2;
-          }
-          break;
-      case TRIANGLE_STRIP:
-          c_triangle[c_vertex_count] = performModelTransform(vertex);
-          c_vertex_count++;
-          if(c_vertex_count == 3)
-          {
-            push_object();
-            c_triangle[0] = c_triangle[2];
-            c_vertex_count = 2;
-          }
-          break;
-  */
 }
+
+/**
+ * Pop a model matrix
+ */
+void Scene::pop_matrix(void) { model_s.pop(); }
+
+/**
+ * Overwrites the current active top-stack matrix
+ */
+void Scene::put_matrix(glm::mat4& mat) { model_s.top() = mat; }
+
+/**
+ * Push a matrix, copy the old one to the current one
+ * If there was no matrix on the stack, then set it to I
+ */
+void Scene::push_matrix(void)
+{
+  if (model_s.size() == 0)
+    model_s.push(glm::mat4(1.0));
+  else
+  {
+    glm::mat4 last = model_s.top();
+    model_s.push(last);
+  }
+}
+
+/**
+ * Replaces the top stack matrix by an identity matrix.
+ */
+void Scene::load_identity(void)
+{
+  glm::mat4 mat(1.0);
+  put_matrix(mat);
+}
+
+/**
+ * Returns a copy of the current active top stack matrix.
+ */
+__attribute__((pure)) glm::mat4 Scene::get_matrix(void)
+{
+  return model_s.top();
+}
+
+/**
+ * Data structure used in vertex buffers.
+ * It's an interleaved list, containing
+ * dpos -> ndc coords
+ * dpos_i -> integer pixel position
+ * pos -> world pos
+ * normal -> normal vector
+ * color -> a float color value [0..1]
+ */
+
+typedef struct interleave_ interleave;
+struct interleave_ // TODO what is this?
+{
+  glm::vec3 pos;
+  float color;
+};
+
+void Scene::printInfo(void)
+{
+  cout << "OpenCGL info - current state:" << endl;
+  cout << "Size: w=" << size_w << " h=" << size_h << endl;
+  cout << "Viewport: x=" << view_min_x << "->" << view_max_x << " ";
+  cout << "y=" << view_min_y << "->" << view_max_y << endl;
+  cout << endl;
+}
+
+Scene::Scene(unsigned int w,
+             unsigned int h,
+             size_t const primitive_size,
+             AABB const& aabb)
+    : size_w(w), size_h(h), view_min_x(-int(size_w) / 2),
+      view_max_x(size_w / 2), view_min_y(-int(size_h) / 2),
+      view_max_y(size_h / 2)
+{
+  objects_buffer = new float[primitive_size];
+  objects_buffer_i = 0;
+  octree = new Octree(aabb);
+  push_matrix();
+}
+
+Scene::~Scene(void)
+{
+  delete[] objects_buffer;
+  delete octree;
+}
+
+void Scene::clear_buffers(void)
+{
+  objects_buffer_i = 0;
+  AABB const& aabb = octree->aabb;
+  Octree* clean = new Octree(aabb);
+  delete octree;
+  octree = clean;
+}
+
+__attribute__((pure)) size_t Scene::objects_byte_size(void) const
+{
+  return objects_buffer_i * sizeof(float);
+}
+
+__attribute__((pure)) float const* Scene::get_objects(void) const
+{
+  return objects_buffer;
+}
+
+__attribute__((pure)) Octree const* Scene::get_octree(void) const
+{
+  return octree;
+}
+
+/*#include"pngwrapper.hpp"
+
+void printScreen(string& fpath, OpenCL& cl)
+{
+    flushRTBuffer(cl);
+    cout << "Reading buffer" << endl;
+    OpenCL::readBufferBlocking(framebufferqueue,
+      frameBuf_mem, size_w*size_h*sizeof(uint8_t), frame_buffer);
+    cout << "Saving to file" << endl;
+    saveBWToFile(frame_buffer, size_w, size_h, fpath);
+    cout << "Done" << endl;
+    cout.flush();
+}*/
+
+void Scene::rotate(float angle, float x, float y, float z)
+{
+  rotate(angle, glm::vec3(x, y, z));
+}
+
+void Scene::rotate(float angle, glm::vec3 rotv)
+{
+  const glm::mat4 rotate = glm::rotate(model_s.top(), angle, rotv);
+  model_s.top() = rotate;
+}
+
+void Scene::translate(glm::vec3 dirv)
+{
+  const glm::mat4 translate = glm::translate(model_s.top(), dirv);
+  model_s.top() = translate;
+}
+
+void Scene::translate(float x, float y, float z)
+{
+  translate(glm::vec3(x, y, z));
+}
+
+//---------------------------------------
+
+void Scene::push_vec3(glm::vec3 const& v)
+{
+  objects_buffer[objects_buffer_i + 0] = v.x;
+  objects_buffer[objects_buffer_i + 1] = v.y;
+  objects_buffer[objects_buffer_i + 2] = v.z;
+  objects_buffer_i += 3;
+}
+
+void Scene::push_vertex(glm::vec3 const& v)
+{
+  glm::vec3 res = glm::vec3(model_s.top() * glm::vec4(v, 1.0f));
+  push_vec3(res);
+}
+
+// Pushes the object to the objects_buffer at byte index freeOffset_r
+void Scene::push_header(uint8_t const type, Material const& material)
+{
+  uint8_t* thisObj_u = (uint8_t*)(objects_buffer + objects_buffer_i);
+  thisObj_u[0] = type;
+  thisObj_u[1] = material.type;
+  objects_buffer_i++;
+  push_vec3(material.passive);
+  push_vec3(material.active);
+}
+
+__attribute__((const)) float min3(float a, float b, float c)
+{
+  return min(a, min(b, c));
+}
+__attribute__((const)) float max3(float a, float b, float c)
+{
+  return max(a, max(b, c));
+}
+
+void Scene::triangle(Material const& material,
+                     glm::vec3 const& a,
+                     glm::vec3 const& b,
+                     glm::vec3 const& c)
+{
+  glm::vec3 const lower(
+      min3(a.x, b.x, c.x), min3(a.y, b.y, c.y), min3(a.z, b.z, c.z));
+  glm::vec3 const upper(
+      max3(a.x, b.x, c.x), max3(a.y, b.y, c.y), max3(a.z, b.z, c.z));
+  AABB aabb(lower, upper);
+  octree->insert(objects_buffer_i, aabb);
+
+  push_header(TRIANGLE, material);
+  push_vertex(a);
+  push_vertex(b);
+  push_vertex(c);
+}
+
+void Scene::sphere(Material const& material, glm::vec3 const& pos, float radius)
+{
+  glm::vec3 const lower(pos - glm::vec3(radius));
+  glm::vec3 const upper(pos + glm::vec3(radius));
+  AABB aabb(lower, upper);
+  octree->insert(objects_buffer_i, aabb);
+
+  push_header(SPHERE, material);
+  push_vertex(pos);
+  objects_buffer[objects_buffer_i] = radius;
+  objects_buffer_i++;
+}
+
+void Scene::quad(Material const& material,
+                 glm::vec3 const& a,
+                 glm::vec3 const& b,
+                 glm::vec3 const& c,
+                 glm::vec3 const& d)
+{
+  triangle(material, a, b, c);
+  triangle(material, a, c, d);
+}
+
+/*
+    case TRIANGLE_FAN:
+        c_triangle[c_vertex_count] = performModelTransform(vertex);
+        c_vertex_count++;
+        if(c_vertex_count == 3)
+        {
+          push_object();
+          c_triangle[1] = c_triangle[2];
+          c_vertex_count = 2;
+        }
+        break;
+    case TRIANGLE_STRIP:
+        c_triangle[c_vertex_count] = performModelTransform(vertex);
+        c_vertex_count++;
+        if(c_vertex_count == 3)
+        {
+          push_object();
+          c_triangle[0] = c_triangle[2];
+          c_vertex_count = 2;
+        }
+        break;
+*/

@@ -1,46 +1,63 @@
 #ifndef __CL_HELPER_USW__
 #define __CL_HELPER_USW__
 
-#include<cstdint>
-#include<CL/cl.h>
+#include <cstdint>
+#include <CL/cl.h>
 
-#include"cl.hpp"
-
-#define ULONG_SIZE SIZE_OF(unsigned long)
+#include "cl.hpp"
+#include "scene.hpp"
 
 /**
- * This namepace holds the openc environment as well
- * as the path_tracer and its buffers
+ * This namepace holds the OpenCL environment, the remote buffers and the
+ * command queue.
  */
 namespace CLHelper
 {
-  /**
-   * Buffers on GPU
-   */
-   extern OpenCL::RemoteBuffer /*float */ fov_mem;
-   extern OpenCL::RemoteBuffer /*float */ objects_mem;
-   extern OpenCL::RemoteBuffer /*char4 */ frame_c_mem;
-   extern OpenCL::RemoteBuffer /*float4*/ frame_f_mem;
-   extern OpenCL::RemoteBuffer /*float */ samples_mem;
-   extern OpenCL::RemoteBuffer /*PRNG  */ prng_mem;
+/**
+ * Buffers on GPU
+ */
+extern OpenCL::RemoteBuffer /*float */ fov_mem;
+extern OpenCL::RemoteBuffer /*float */ objects_mem;
+extern OpenCL::RemoteBuffer /*float */ octree_mem;
+extern OpenCL::RemoteBuffer /*char4 */ frame_c_mem;
+extern OpenCL::RemoteBuffer /*float4*/ frame_f_mem;
+extern OpenCL::RemoteBuffer /*float */ samples_mem;
+extern OpenCL::RemoteBuffer /*PRNG  */ prng_mem;
 
-  extern cl_command_queue queue;
-  extern OpenCL::Kernel* path_tracer;
-  extern OpenCL::Kernel* buffer_cleaner;
+/**
+ * Runs the cleaner kernel.
+ * @param cleaner - The cleaner kernel.
+ */
+void clear_buffers(OpenCL::Kernel const& cleaner);
 
-  void clearBuffers(void);
-  void init
-  (
-    unsigned int w,
-    unsigned int h,
-    std::string& tracepath,
-    std::string& cleanpath,
-    OpenCL::Environment& cl
-  );
-  void close(void);
-  void pushScene(void);
-  void render(void);
+/**
+ * Initializes the buffers, compiles the kernels and assigns their arguments.
+ */
+void init(unsigned int const w,
+          unsigned int const h,
+          OpenCL::Kernel& tracer,
+          OpenCL::Kernel& cleaner,
+          size_t const primitive_size,
+          size_t const octree_size);
 
+/**
+ * Frees environment resources.
+ */
+void close(void);
+
+/**
+ * Writes the scene definition to the remote buffers.
+ */
+void push_scene(Scene const& scene);
+
+/**
+ * Runs the tracer kernel.
+ * @param tracr - The tracer kernel.
+ */
+void render(OpenCL::Kernel const& tracer);
+
+void write_buffer(OpenCL::RemoteBuffer const& buffer, void* data);
+void read_buffer(OpenCL::RemoteBuffer const& buffer, void* data);
 }
 
 #endif
