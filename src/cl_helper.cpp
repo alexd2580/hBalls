@@ -18,7 +18,7 @@ float* octree_buffer;
 /**
  * The OpenCL environment.
  */
-Environment const* environment;
+Environment environment;
 
 /**
  * Buffers on GPU
@@ -31,26 +31,20 @@ RemoteBuffer /*float4*/ frame_f_mem;
 RemoteBuffer /*float */ samples_mem;
 RemoteBuffer /*PRNG  */ prng_mem;
 
-cl_command_queue queue;
+cl::CommandQueue queue;
 
 unsigned int size_w;
 unsigned int size_h;
 
-void clear_buffers(Kernel const& cleaner)
-{
-  cleaner.enqueue_kernel(size_w * size_h, queue);
-}
-
 void init(unsigned int const w,
           unsigned int const h,
           Kernel& tracer,
-          Kernel& cleaner,
           size_t const primitive_size,
           size_t const octree_size)
 {
   cout << "[CLHelper] Initializing." << endl;
 
-  environment = OpenCL::init();
+  environment = Environment();
 
   size_w = w;
   size_h = h;
@@ -59,29 +53,26 @@ void init(unsigned int const w,
 
   // Init prng
   unsigned long prng[17];
-  for (auto i = 0; i < 16; i++)
+  for(int i = 0; i < 16; i++)
+  {
     prng[i] = (unsigned long)rand() << 32 | (unsigned long)rand();
+  }
   prng[16] = 0;
 
-  fov_mem = environment->allocate_space(16 * sizeof(float), nullptr);
+  fov_mem = environment.allocate_space(16 * sizeof(float), nullptr);
   objects_mem =
-      environment->allocate_space(primitive_size * sizeof(float), nullptr);
-  octree_mem =
-      environment->allocate_space(octree_size * sizeof(float), nullptr);
+      environment.allocate_space(primitive_size * sizeof(float), nullptr);
+  octree_mem = environment.allocate_space(octree_size * sizeof(float), nullptr);
   frame_c_mem =
-      environment->allocate_space(size_h * size_w * sizeof(uint32_t), nullptr);
+      environment.allocate_space(size_h * size_w * sizeof(uint32_t), nullptr);
   frame_f_mem =
-      environment->allocate_space(size_h * size_w * 4 * sizeof(float), nullptr);
-  samples_mem = environment->allocate_space(sizeof(float), nullptr);
-  prng_mem = environment->allocate_space(17 * sizeof(unsigned int), prng);
+      environment.allocate_space(size_h * size_w * 4 * sizeof(float), nullptr);
+  samples_mem = environment.allocate_space(sizeof(float), nullptr);
+  prng_mem = environment.allocate_space(17 * sizeof(unsigned long), prng);
 
-  queue = environment->createCommandQueue();
+  queue = environment.createCommandQueue();
 
-  tracer.make(*environment);
-  cleaner.make(*environment);
-
-  cleaner.set_argument(0, frame_c_mem);
-  cleaner.set_argument(1, frame_f_mem);
+  tracer.make(environment);
 
   tracer.set_argument(0, fov_mem);
   tracer.set_argument(1, objects_mem);
@@ -91,23 +82,15 @@ void init(unsigned int const w,
   tracer.set_argument(5, samples_mem);
   tracer.set_argument(6, prng_mem);
 
-  clear_buffers(cleaner);
   cout << "[CLHelper] Done." << endl;
 }
 
 void close(void)
 {
   cout << "[CLHelper] Closing." << endl;
-  if (queue != nullptr)
-    clReleaseCommandQueue(queue);
   // release buffers or something
-  if (octree_buffer != nullptr)
+  if(octree_buffer != nullptr)
     delete[] octree_buffer;
-  if (environment != nullptr)
-  {
-    environment->release();
-    delete environment;
-  }
   cout << "[CLHelper] Closed." << endl;
 }
 
@@ -123,14 +106,15 @@ void push_scene(Scene const& scene)
 
   Octree const* octree = scene.get_octree();
   size = octree->print_to_array(octree_buffer);
+  cout << "[CLHelper] Octree has size " << size << endl;
   // TODO size
   writeBufferBlocking(queue, octree_mem, octree_buffer);
 }
 
 void render(Kernel const& tracer)
 {
-  tracer.enqueue_kernel(size_w, size_h, queue);
-  clFinish(queue);
+  tracer.enqueue(size_w, size_h, queue);
+  queue.finish();
 }
 
 void write_buffer(RemoteBuffer const& buffer, void* data)

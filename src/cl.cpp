@@ -12,7 +12,7 @@ bool load_file(string const& name, string& content)
   fstream file(name.c_str(), fstream::in);
 
   // We verify if the file was successfully opened
-  if (file.is_open())
+  if(file.is_open())
   {
     // We use the standard getline function to read the file into
     // a std::string, stoping only at "\0"
@@ -36,7 +36,7 @@ __attribute__((const)) char const* translate_cl_error(cl_int err)
 #define ERRORCASE(e)                                                           \
   case e:                                                                      \
     return #e;
-  switch (err)
+  switch(err)
   {
     ERRORCASE(CL_SUCCESS)
     ERRORCASE(CL_DEVICE_NOT_FOUND)
@@ -117,34 +117,50 @@ void OpenCLException::print(void)
 /******************************************************************************/
 /******************************************************************************/
 
-Environment::Environment(cl_platform_id const platform,
-                         cl_uint const dev_count,
-                         cl_device_id* const dev_ids,
-                         cl_context const cont)
-    : m_platform(platform), device_count(dev_count), device_ids(dev_ids),
-      m_context(cont)
+Environment::Environment(void)
 {
-}
+  cout << "[OpenCL] Initializing OpenCL environment." << endl;
 
-void Environment::release(void) const
-{
-  cout << "[Context] Closing." << endl;
-  if (m_context != nullptr)
-    clReleaseContext(m_context);
-  if (device_ids != nullptr)
-    delete[] device_ids;
-  cout << "[Context] Closed." << endl;
+  vector<cl::Platform> platforms;
+  error = cl::Platform::get(&platforms);
+  if(error != CL_SUCCESS)
+  {
+    string msg("Could not get platforms.");
+    throw OpenCLException(error, msg);
+  }
+
+  for(auto i = platforms.begin(); i != platforms.end(); i++)
+  {
+    cout << "[OpenCL] Platform:" << endl;
+    print_platform_info(*i, CL_PLATFORM_VERSION);
+    print_platform_info(*i, CL_PLATFORM_NAME);
+    print_platform_info(*i, CL_PLATFORM_VENDOR);
+    print_platform_info(*i, CL_PLATFORM_EXTENSIONS);
+  }
+
+  // SELECT CPU VS GPU HERE!!!!
+  m_platform = platforms[1];
+  list_devices(m_devices, m_platform, CL_DEVICE_TYPE_CPU);
+
+  m_context = cl::Context(m_devices, nullptr, nullptr, nullptr, &error);
+  if(error != CL_SUCCESS)
+  {
+    string msg("Could not create context.");
+    throw OpenCLException(error, msg);
+  }
+
+  cout << "[OpenCL] Started." << endl;
 }
 
 RemoteBuffer Environment::allocate_space(size_t byte_size, void* bytes) const
 {
-  cl_mem remote_buffer = clCreateBuffer(
-      m_context,
-      CL_MEM_READ_WRITE | (bytes != nullptr ? CL_MEM_COPY_HOST_PTR : 0),
-      byte_size,
-      bytes,
-      &error);
-  if (error != CL_SUCCESS)
+  cl::Buffer remote_buffer(m_context,
+                           CL_MEM_READ_WRITE |
+                               (bytes != nullptr ? CL_MEM_COPY_HOST_PTR : 0),
+                           byte_size,
+                           bytes,
+                           &error);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not create remote buffer of size " +
                std::to_string(byte_size) + ".");
@@ -157,38 +173,39 @@ RemoteBuffer Environment::allocate_space(size_t byte_size, void* bytes) const
   return rb;
 }
 
-cl_command_queue Environment::createCommandQueue(void) const
+cl::CommandQueue Environment::createCommandQueue(void) const
 {
-  cl_command_queue queue =
-      clCreateCommandQueue(m_context, device_ids[0], 0, &error);
-  if (error != CL_SUCCESS)
+  cl::CommandQueue queue(m_context, m_devices[0], 0, &error);
+  if(error != CL_SUCCESS)
   {
-    string msg("COuld not create command queue.");
+    string msg("Could not create command queue.");
     throw OpenCLException(error, msg);
   }
   return queue;
 }
 
-void writeBufferBlocking(cl_command_queue const& queue,
+void writeBufferBlocking(cl::CommandQueue const& queue,
                          RemoteBuffer const& remote,
                          void const* data)
 {
-  error = clEnqueueWriteBuffer(
-      queue, remote.buffer, CL_TRUE, 0, remote.size, data, 0, nullptr, nullptr);
-  if (error != CL_SUCCESS)
+  queue.finish();
+  error = queue.enqueueWriteBuffer(
+      remote.buffer, CL_TRUE, 0, remote.size, data, nullptr, nullptr);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not write to buffer.");
     throw OpenCLException(error, msg);
   }
 }
 
-void readBufferBlocking(cl_command_queue const& queue,
+void readBufferBlocking(cl::CommandQueue const& queue,
                         RemoteBuffer const& remote,
                         void* data)
 {
-  error = clEnqueueReadBuffer(
-      queue, remote.buffer, CL_TRUE, 0, remote.size, data, 0, nullptr, nullptr);
-  if (error != CL_SUCCESS)
+  queue.finish();
+  error = queue.enqueueReadBuffer(
+      remote.buffer, CL_TRUE, 0, remote.size, data, nullptr, nullptr);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not read from buffer.");
     throw OpenCLException(error, msg);
@@ -205,27 +222,21 @@ Kernel::Kernel(string const& fpath, string const& mname)
   m_program = nullptr;
 }
 
-void Kernel::release(void)
-{
-  if (m_kernel != nullptr)
-    clReleaseKernel(m_kernel);
-  if (m_program != nullptr)
-    clReleaseProgram(m_program);
-}
-
 void Kernel::load(Environment const& context)
 {
   string kernel_string;
-  if (!load_file(file_path, kernel_string))
+  if(!load_file(file_path, kernel_string))
   {
     string msg("Could not read file " + file_path + ".");
     throw OpenCLException(0, msg);
   }
 
   char const* kernel_string_ptr = kernel_string.c_str();
-  m_program = clCreateProgramWithSource(
-      context.m_context, 1, &kernel_string_ptr, nullptr, &error);
-  if (error != CL_SUCCESS)
+  vector<pair<const char*, size_t>> sources;
+  sources.push_back(
+      pair<const char*, size_t>(kernel_string_ptr, kernel_string.size()));
+  m_program = cl::Program(context.m_context, sources, &error);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not create program.");
     throw OpenCLException(error, msg);
@@ -234,38 +245,15 @@ void Kernel::load(Environment const& context)
 
 void Kernel::build(Environment const& context)
 {
-  error = clBuildProgram(m_program,
-                         context.device_count,
-                         context.device_ids,
-                         nullptr,
-                         nullptr,
-                         nullptr);
-  switch (error)
+  error = m_program.build(context.m_devices);
+  switch(error)
   {
   case CL_SUCCESS:
     break;
   case CL_BUILD_PROGRAM_FAILURE:
   {
-    // Determine the size of the log
-    size_t log_size;
-    clGetProgramBuildInfo(m_program,
-                          context.device_ids[0],
-                          CL_PROGRAM_BUILD_LOG,
-                          0,
-                          nullptr,
-                          &log_size);
-    // Allocate memory for the log
-    char* log = (char*)alloca(log_size * sizeof(char));
-    // Get the log
-    clGetProgramBuildInfo(m_program,
-                          context.device_ids[0],
-                          CL_PROGRAM_BUILD_LOG,
-                          log_size,
-                          log,
-                          nullptr);
-    // Print the log
-
-    string log_str(log);
+    string log;
+    m_program.getBuildInfo(context.m_devices[0], CL_PROGRAM_BUILD_LOG, &log);
     string msg("Could not build program " + file_path + ":\n" + log);
     throw OpenCLException(error, msg);
   }
@@ -279,12 +267,39 @@ void Kernel::build(Environment const& context)
 
 void Kernel::create_kernel(void)
 {
-  m_kernel = clCreateKernel(m_program, main_function.c_str(), &error);
-  if (error != CL_SUCCESS)
+  m_kernel = cl::Kernel(m_program, main_function.c_str(), &error);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not create kernel.");
     throw OpenCLException(error, msg);
   }
+
+  /*cl_ulong local_mem;
+  error = m_kernel.getWorkGroupInfo(CL_KERNEL_LOCAL_MEM_SIZE, &local_mem);
+  if(error != CL_SUCCESS)
+  {
+    string msg("Could not get kernel local mem size.");
+    throw OpenCLException(error, msg);
+  }
+
+  cout << "[" << file_path << "] Local mem size: " << (long)local_mem << endl;*/
+
+  // pocl ** * ******* ***** ** **** (private mem unimplemented, would fail)
+  /*cl_ulong private_mem;
+  error = clGetKernelWorkGroupInfo(m_kernel,
+                                   context.device_ids[0],
+                                   CL_KERNEL_PRIVATE_MEM_SIZE,
+                                   sizeof(cl_ulong),
+                                   &private_mem,
+                                   nullptr);
+  if (error != CL_SUCCESS)
+  {
+    string msg("Could not create kernel private mem size.");
+    throw OpenCLException(error, msg);
+  }
+
+  cout << "[" << file_path << "] Private memory size: " << private_mem <<
+  endl;*/
 }
 
 void Kernel::make(Environment const& c)
@@ -294,28 +309,33 @@ void Kernel::make(Environment const& c)
   create_kernel();
 }
 
-void Kernel::set_argument(unsigned int nr, size_t arg_size, void* arg)
+template <typename T> void Kernel::set_argument(unsigned int nr, T const& arg)
 {
-  error = clSetKernelArg(m_kernel, nr, arg_size, arg);
-  if (error != CL_SUCCESS)
+  error = m_kernel.setArg(nr, arg);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not set kernel argument.");
     throw OpenCLException(error, msg);
   }
 }
 
-void Kernel::set_argument(unsigned int nr, RemoteBuffer buf)
+void Kernel::set_argument(unsigned int nr, RemoteBuffer const& buf)
 {
-  set_argument(nr, sizeof(cl_mem), &buf.buffer);
+  set_argument(nr, &buf.buffer);
 }
 
-cl_event Kernel::enqueue_kernel(size_t width, cl_command_queue& queue) const
+cl::Event Kernel::enqueue(size_t const width,
+                          cl::CommandQueue const& queue) const
 {
-  const size_t workSize[] = {width, 0, 0};
-  cl_event event;
-  error = clEnqueueNDRangeKernel(
-      queue, m_kernel, 1, nullptr, workSize, nullptr, 0, nullptr, &event);
-  if (error != CL_SUCCESS)
+  cl::Event event;
+  error = queue.enqueueNDRangeKernel(m_kernel,
+                                     cl::NullRange,
+                                     cl::NDRange(width, 0, 0),
+                                     cl::NDRange(1, 0, 0),
+                                     nullptr,
+                                     &event);
+
+  if(error != CL_SUCCESS)
   {
     string msg("Could not enqueue kernel.");
     throw OpenCLException(error, msg);
@@ -323,15 +343,18 @@ cl_event Kernel::enqueue_kernel(size_t width, cl_command_queue& queue) const
   return event;
 }
 
-cl_event Kernel::enqueue_kernel(size_t width,
-                                size_t height,
-                                cl_command_queue& queue) const
+cl::Event Kernel::enqueue(size_t const width,
+                          size_t const height,
+                          cl::CommandQueue const& queue) const
 {
-  const size_t workSize[] = {width, height, 0};
-  cl_event event;
-  error = clEnqueueNDRangeKernel(
-      queue, m_kernel, 2, nullptr, workSize, nullptr, 0, nullptr, &event);
-  if (error != CL_SUCCESS)
+  cl::Event event;
+  error = queue.enqueueNDRangeKernel(m_kernel,
+                                     cl::NullRange,
+                                     cl::NDRange(width, height),
+                                     cl::NDRange(width, 1),
+                                     nullptr,
+                                     &event);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not enqueue kernel.");
     throw OpenCLException(error, msg);
@@ -342,156 +365,76 @@ cl_event Kernel::enqueue_kernel(size_t width,
 /******************************************************************************/
 /******************************************************************************/
 
-void _print_platform_info(cl_platform_id platform,
-                          cl_platform_info param,
-                          string param_name)
+void _print_platform_info(cl::Platform const& platform,
+                          cl_platform_info const param,
+                          string const param_name)
 {
-  size_t size;
-  error = clGetPlatformInfo(platform, param, 0, nullptr, &size);
-  if (error != CL_SUCCESS)
-  {
-    string msg("Could not get parameter text size for " + param_name + ".");
-    throw OpenCLException(error, msg);
-  }
-
-  char* text = (char*)alloca(sizeof(char) * size);
-  error = clGetPlatformInfo(platform, param, size, text, nullptr);
-  if (error != CL_SUCCESS)
+  string val;
+  error = platform.getInfo(param, &val);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not get parameter " + param_name + ".");
     throw OpenCLException(error, msg);
   }
 
-  cout << "[OpenCL] " << param_name << ":\t" << text << endl;
+  cout << "[OpenCL] " << param_name << "=\t" << val << endl;
 }
 
-pair<cl_uint, cl_device_id*> _list_devices(cl_platform_id platform,
-                                           cl_device_type type,
-                                           std::string type_name)
+void _list_devices(vector<cl::Device>& devices,
+                   cl::Platform const& platform,
+                   cl_device_type const type,
+                   std::string const type_name)
 {
   cout << "[OpenCL] Listing devices of type " << type_name << "." << endl;
 
-  cl_uint device_count;
-  error = clGetDeviceIDs(platform, type, 0, nullptr, &device_count);
-  if (error != CL_SUCCESS)
+  error = platform.getDevices(type, &devices);
+  if(error != CL_SUCCESS)
   {
-    string msg("Could not get device count (" + type_name + ").");
-    throw OpenCLException(error, msg);
-  }
-  cl_device_id* device_ids = new cl_device_id[device_count];
-  if (device_ids == nullptr)
-  {
-    string msg("Memory allocation failed.");
-    throw OpenCLException(0, msg);
-  }
-
-  error = clGetDeviceIDs(platform, type, device_count, device_ids, nullptr);
-  if (error != CL_SUCCESS)
-  {
-    string msg("Could not get device ids (" + type_name + ").");
+    string msg("Could not get devices of type (" + type_name + ").");
     throw OpenCLException(error, msg);
   }
 
-  for (unsigned int i = 0; i < device_count; i++)
+  for(auto i = devices.begin(); i != devices.end(); i++)
   {
-    cout << "[OpenCL] Device " << i << ":" << endl;
-    cl_device_id id = device_ids[i];
-    print_device_info(id, CL_DEVICE_AVAILABLE, cl_bool);
-    print_device_info(id, CL_DEVICE_COMPILER_AVAILABLE, cl_bool);
-    print_device_info(id, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_bool);
-    print_device_info(id, CL_DEVICE_GLOBAL_MEM_SIZE, cl_ulong);
-    print_device_info(id, CL_DEVICE_MAX_CLOCK_FREQUENCY, cl_uint);
-    print_device_info(id, CL_DEVICE_MAX_COMPUTE_UNITS, cl_uint);
-    print_device_info(id, CL_DEVICE_MAX_CONSTANT_ARGS, cl_uint);
-    print_device_info(id, CL_DEVICE_MAX_WORK_GROUP_SIZE, size_t);
-    print_device_info(id, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, cl_uint);
+    cout << "[OpenCL] Device:" << endl;
+    print_device_info(*i, CL_DEVICE_NAME, string);
+    print_device_info(*i, CL_DEVICE_VENDOR, string);
+    print_device_info(*i, CL_DEVICE_VERSION, string);
+    print_device_info(*i, CL_DRIVER_VERSION, string);
+    print_device_info(*i, CL_DEVICE_OPENCL_C_VERSION, string);
+    print_device_info(*i, CL_DEVICE_AVAILABLE, cl_bool);
+    print_device_info(*i, CL_DEVICE_COMPILER_AVAILABLE, cl_bool);
+    print_device_info(*i, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_bool);
+    print_device_info(*i, CL_DEVICE_GLOBAL_MEM_SIZE, cl_ulong);
+    print_device_info(*i, CL_DEVICE_MAX_CLOCK_FREQUENCY, cl_uint);
+    print_device_info(*i, CL_DEVICE_MAX_COMPUTE_UNITS, cl_uint);
+    print_device_info(*i, CL_DEVICE_MAX_CONSTANT_ARGS, cl_uint);
+    print_device_info(*i, CL_DEVICE_MAX_WORK_GROUP_SIZE, size_t);
+    print_device_info(*i, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, cl_uint);
   }
   cout << endl;
-
-  return pair<cl_uint, cl_device_id*>(device_count, device_ids);
 }
 
 template <typename T>
-void _print_device_info(cl_device_id device,
-                        cl_device_info param,
-                        std::string param_name)
+void _print_device_info(cl::Device const& device,
+                        cl_device_info const param,
+                        std::string const param_name)
 {
   T res;
-  error = clGetDeviceInfo(device, param, sizeof(T), &res, nullptr);
-  if (error != CL_SUCCESS)
+  error = device.getInfo<T>(param, &res);
+  if(error != CL_SUCCESS)
   {
     string msg("Could not get parameter " + param_name + ".");
     throw OpenCLException(error, msg);
   }
 
-  cout << "[OpenCL] " << param_name << "=" << res << endl;
-}
-
-Environment const* init(void)
-{
-  cout << "[OpenCL] Initializing." << endl;
-
-  cl_uint platform_count;
-  error = clGetPlatformIDs(0, nullptr, &platform_count);
-  if (error != CL_SUCCESS)
-  {
-    string msg("Could not get platform count.");
-    throw OpenCLException(error, msg);
-  }
-
-  cl_platform_id* platform_ids = new cl_platform_id[platform_count];
-  if (platform_ids == nullptr)
-  {
-    string msg("Memory allocation failed.");
-    throw OpenCLException(error, msg);
-  }
-
-  error = clGetPlatformIDs(platform_count, platform_ids, nullptr);
-  if (error != CL_SUCCESS)
-  {
-    string msg("Could not get platform ids.");
-    throw OpenCLException(error, msg);
-  }
-
-  for (unsigned int i = 0; i < platform_count; i++)
-  {
-    cout << "[OpenCL] Platform " << i << ":" << endl;
-    cl_platform_id id = platform_ids[i];
-    print_platform_info(id, CL_PLATFORM_VERSION);
-    print_platform_info(id, CL_PLATFORM_NAME);
-    print_platform_info(id, CL_PLATFORM_VENDOR);
-    print_platform_info(id, CL_PLATFORM_EXTENSIONS);
-  }
-
-  cl_platform_id platform_id = platform_ids[0];
-  delete[] platform_ids;
-
-  pair<cl_uint, cl_device_id*> devices =
-      list_devices(platform_id, CL_DEVICE_TYPE_GPU);
-  cl_uint& device_count = devices.first;
-  cl_device_id*& device_ids = devices.second;
-
-  // create context
-  cl_context_properties contextProperties[] = {
-      CL_CONTEXT_PLATFORM, (cl_context_properties)platform_id, 0, 0};
-
-  cl_context context = clCreateContext(
-      contextProperties, device_count, device_ids, nullptr, nullptr, &error);
-  if (error != CL_SUCCESS)
-  {
-    string msg("Could not create context.");
-    throw OpenCLException(error, msg);
-  }
-
-  cout << "[OpenCL] Started." << endl;
-
-  return new Environment(platform_id, device_count, device_ids, context);
+  cout << "[OpenCL] " << param_name << " =\t" << res << endl;
 }
 
 void waitForEvent(cl_event& e)
 {
   error = clWaitForEvents(1, &e);
-  if (error != CL_SUCCESS)
+  if(error != CL_SUCCESS)
   {
     string msg("Waiting for event failed.");
     throw OpenCLException(error, msg);
@@ -503,7 +446,7 @@ cl_int getEventStatus(cl_event& e)
   cl_int stat;
   error = clGetEventInfo(
       e, CL_EVENT_COMMAND_EXECUTION_STATUS, sizeof(cl_int), &stat, NULL);
-  if (error != CL_SUCCESS)
+  if(error != CL_SUCCESS)
   {
     string msg("Could not get event status.");
     throw OpenCLException(error, msg);

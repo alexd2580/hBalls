@@ -104,9 +104,6 @@ int main(void)
 
   string tracer("./cl/ray_frag.cl");
   string tracer_main("trace");
-  string cleaner("./cl/clearBuffers.cl");
-  string cleaner_main("clearBuffers");
-  OpenCL::Kernel buffer_cleaner(cleaner, cleaner_main);
   OpenCL::Kernel path_tracer(tracer, tracer_main);
 
   unsigned int const size_w = 1;
@@ -114,7 +111,7 @@ int main(void)
   uint32_t* frame_buffer =
       (uint32_t*)alloca(size_w * size_h * sizeof(uint32_t));
 
-  if (SDL::init(size_w, size_h) != 0)
+  if(SDL::init(size_w, size_h) != 0)
   {
     cerr << "[Main] SDL initialization failed." << endl;
     return 1;
@@ -125,14 +122,9 @@ int main(void)
   try
   {
     size_t const primitive_size = 500 * 16;
-    size_t const octree_size = 2000; // TODO find better approximations!
+    size_t const octree_size = 3000; // TODO find better approximations!
 
-    CLHelper::init(size_w,
-                   size_h,
-                   path_tracer,
-                   buffer_cleaner,
-                   primitive_size,
-                   octree_size);
+    CLHelper::init(size_w, size_h, path_tracer, primitive_size, octree_size);
 
     AABB aabb(glm::vec3(-10.0f), glm::vec3(10.0f));
 
@@ -143,21 +135,21 @@ int main(void)
     create_scene(scene);
     CLHelper::push_scene(scene);
 
-    while (!SDL::die)
+    while(!SDL::die)
     {
       SDL::handleEvents();
-      CLHelper::clear_buffers(buffer_cleaner);
       samples++;
       CLHelper::write_buffer(CLHelper::samples_mem, &samples);
       CLHelper::render(path_tracer);
       CLHelper::read_buffer(CLHelper::frame_c_mem, frame_buffer);
       SDL::drawFrame(frame_buffer);
       cout << "[Main] Samples: " << (int)samples << endl;
+      cout.flush();
     }
 
     CLHelper::close();
   }
-  catch (OpenCLException& e)
+  catch(OpenCLException& e)
   {
     e.print();
   }

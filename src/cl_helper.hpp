@@ -25,18 +25,11 @@ extern OpenCL::RemoteBuffer /*float */ samples_mem;
 extern OpenCL::RemoteBuffer /*PRNG  */ prng_mem;
 
 /**
- * Runs the cleaner kernel.
- * @param cleaner - The cleaner kernel.
- */
-void clear_buffers(OpenCL::Kernel const& cleaner);
-
-/**
  * Initializes the buffers, compiles the kernels and assigns their arguments.
  */
 void init(unsigned int const w,
           unsigned int const h,
           OpenCL::Kernel& tracer,
-          OpenCL::Kernel& cleaner,
           size_t const primitive_size,
           size_t const octree_size);
 

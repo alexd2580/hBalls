@@ -40,7 +40,7 @@ void Scene::put_matrix(glm::mat4& mat) { model_s.top() = mat; }
  */
 void Scene::push_matrix(void)
 {
-  if (model_s.size() == 0)
+  if(model_s.size() == 0)
     model_s.push(glm::mat4(1.0));
   else
   {
@@ -213,17 +213,59 @@ void Scene::triangle(Material const& material,
                      glm::vec3 const& b,
                      glm::vec3 const& c)
 {
-  glm::vec3 const lower(
-      min3(a.x, b.x, c.x), min3(a.y, b.y, c.y), min3(a.z, b.z, c.z));
-  glm::vec3 const upper(
-      max3(a.x, b.x, c.x), max3(a.y, b.y, c.y), max3(a.z, b.z, c.z));
-  AABB aabb(lower, upper);
-  octree->insert(objects_buffer_i, aabb);
+  glm::vec3 ab = (a + b) / 2.0f;
+  glm::vec3 ac = (a + c) / 2.0f;
+  glm::vec3 bc = (b + c) / 2.0f;
+
+  glm::vec3 lower, upper;
+
+  lower = glm::vec3(
+      min3(ab.x, b.x, bc.x), min3(ab.y, b.y, bc.y), min3(ab.z, b.z, bc.z));
+  upper = glm::vec3(
+      max3(ab.x, b.x, bc.x), max3(ab.y, b.y, bc.y), max3(ab.z, b.z, bc.z));
+  AABB aabb0(lower, upper);
+  octree->insert(objects_buffer_i, aabb0);
+
+  push_header(TRIANGLE, material);
+  push_vertex(ab);
+  push_vertex(b);
+  push_vertex(bc);
+
+  lower = glm::vec3(
+      min3(ac.x, bc.x, c.x), min3(ac.y, bc.y, c.y), min3(ac.z, bc.z, c.z));
+  upper = glm::vec3(
+      max3(ac.x, bc.x, c.x), max3(ac.y, bc.y, c.y), max3(ac.z, bc.z, c.z));
+  AABB aabb1(lower, upper);
+  octree->insert(objects_buffer_i, aabb1);
+
+  push_header(TRIANGLE, material);
+  push_vertex(bc);
+  push_vertex(c);
+  push_vertex(ac);
+
+  lower = glm::vec3(
+      min3(ac.x, ab.x, bc.x), min3(ac.y, ab.y, bc.y), min3(ac.z, ab.z, bc.z));
+  upper = glm::vec3(
+      max3(ac.x, ab.x, bc.x), max3(ac.y, ab.y, bc.y), max3(ac.z, ab.z, bc.z));
+  AABB aabb2(lower, upper);
+  octree->insert(objects_buffer_i, aabb2);
+
+  push_header(TRIANGLE, material);
+  push_vertex(ac);
+  push_vertex(ab);
+  push_vertex(bc);
+
+  lower = glm::vec3(
+      min3(a.x, ab.x, ac.x), min3(a.y, ab.y, ac.y), min3(a.z, ab.z, ac.z));
+  upper = glm::vec3(
+      max3(a.x, ab.x, ac.x), max3(a.y, ab.y, ac.y), max3(a.z, ab.z, ac.z));
+  AABB aabb3(lower, upper);
+  octree->insert(objects_buffer_i, aabb3);
 
   push_header(TRIANGLE, material);
   push_vertex(a);
-  push_vertex(b);
-  push_vertex(c);
+  push_vertex(ab);
+  push_vertex(ac);
 }
 
 void Scene::sphere(Material const& material, glm::vec3 const& pos, float radius)
