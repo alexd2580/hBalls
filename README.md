@@ -1,3 +1,3 @@
 # **hBalls**
 
-![](png/screenshot.png)
+![](png/dark_table.png)
