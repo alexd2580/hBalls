@@ -77,18 +77,15 @@ void create_scene(Scene& scene)
 {
   cout << "[Main] Queueing models." << endl;
 
-  Material const red(
-      DIFFUSE, 0.0f, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f));
-  Material const green(
-      DIFFUSE, 0.0f, glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f));
-  Material const blue(
-      DIFFUSE, 0.0f, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f));
+  Material const red(DIFFUSE, 1.0f, 0.0f, glm::vec3(1.0f, 0.0f, 0.0f));
+  Material const green(DIFFUSE, 1.0f, 0.0f, glm::vec3(0.0f, 1.0f, 0.0f));
+  Material const blue(DIFFUSE, 1.0f, 0.0f, glm::vec3(0.0f, 0.0f, 1.0f));
 
-  Material const mirror(MIRROR, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
-  Material const metal(METALLIC, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
-  Material const lamp(DIFFUSE, 0.0f, glm::vec3(1.0f), glm::vec3(30.0f));
+  Material const mirror(MIRROR, 0.0f, 0.0f, glm::vec3(1.0f));
+  Material const metal(METALLIC, 0.2f, 0.0f, glm::vec3(1.0f));
+  Material const lamp(DIFFUSE, 0.0f, 30.0f, glm::vec3(1.0f));
 
-  Material const white(DIFFUSE, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
+  Material const white(DIFFUSE, 1.0f, 0.0f, glm::vec3(1.0f));
 
   scene.push_matrix();
   scene.translate(1.5f, 1.5f, -1.5f);

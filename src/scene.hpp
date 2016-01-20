@@ -16,25 +16,33 @@
 #define GLASS ((uint8_t)4)
 
 /**
-uint8 primitive_type;
-uint8 material_type;
-uin16 __padding__
-float3 passive;
-float3 active;
+## HEADER ##
+type            :: Uint8
+material        :: Uint8
+__padding__     :: Uint16
+roughness       :: Float
+-- 0 -> mirror-like; 1 -> diffuse;
+luminescence    :: Float
+-- values can (and for lamps they should) be greater than 1
+color           :: Float3
 
-data...
+## BODY ##
+payload     :: Data
 
-sphere -> 11*4 byte
-triangle -> 16*4 byte
+sizeof(Sphere) = (6+4) * 4 byte
+sizeof(Triengle) = (6+9) * 4 byte
 **/
 
 struct Material
 {
-  Material(uint8_t type, float roughness, glm::vec3 passive, glm::vec3 active);
+  Material(uint8_t type,
+           float roughness,
+           float luminescence,
+           glm::vec3 const& color);
   uint8_t const type;
   float const roughness;
-  glm::vec3 const passive;
-  glm::vec3 const active;
+  float const luminescence;
+  glm::vec3 const color;
 };
 
 struct Camera

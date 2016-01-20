@@ -1,5 +1,5 @@
 
-#include"scene_helper.hpp"
+#include "scene_helper.hpp"
 
 void box(Scene& scene, float x, float y, float z, Material const& mat)
 {
@@ -34,113 +34,111 @@ void room(Scene& scene, float x, float y, float z, Material const& mat)
 
 namespace Monitor
 {
-  //w 58 h 35 d 7
-  //o 9 f20
+// w 58 h 35 d 7
+// o 9 f20
 
-  //centered on bottom front left corner
-  float width = 0.58f;
-  float height = 0.35f;
-  float depth = 0.07f;
-  float offset = 0.09f;
-  float footsize = 0.20f;
+// centered on bottom front left corner
+float width = 0.58f;
+float height = 0.35f;
+float depth = 0.07f;
+float offset = 0.09f;
+float footsize = 0.20f;
 
-  Material black_metal(DIFFUSE, 0.0f, glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f));
+Material black_metal(METALLIC, 0.5f, 0.0f, glm::vec3(0.0f, 0.0f, 0.0f));
 
-  void display(Scene& scene)
-  {
-    scene.push_matrix();
-    scene.translate(width/2.0f, offset+height/2.0f, -footsize/2.0f);
-    box(scene, width, height, depth, black_metal);
-    scene.pop_matrix();
-  }
-
-  void leg(Scene& scene)
-  {
-    (void)scene;
-    //TODO
-  }
-
-  void render(Scene& scene)
-  {
-    display(scene);
-    leg(scene);
-  }
+void display(Scene& scene)
+{
+  scene.push_matrix();
+  scene.translate(width / 2.0f, offset + height / 2.0f, -footsize / 2.0f);
+  box(scene, width, height, depth, black_metal);
+  scene.pop_matrix();
 }
 
+void leg(Scene& scene)
+{
+  (void)scene;
+  // TODO
+}
+
+void render(Scene& scene)
+{
+  display(scene);
+  leg(scene);
+}
+}
 
 namespace Table
 {
-  //center is front bottom left corner
-  Material light_green(DIFFUSE, 0.0f, glm::vec3(0.6f, 1.0f, 0.6f), glm::vec3(0.0f));
+// center is front bottom left corner
+Material light_green(DIFFUSE, 1.0f, 0.0f, glm::vec3(0.6f, 1.0f, 0.6f));
 
-  void tableTop(Scene& scene)
-  {
-    scene.push_matrix();
-    scene.translate(0.475f, 0.725f, -0.39f);
-    box(scene, 0.95f, 0.05f, 0.78f, light_green);
-    scene.pop_matrix();
+void tableTop(Scene& scene)
+{
+  scene.push_matrix();
+  scene.translate(0.475f, 0.725f, -0.39f);
+  box(scene, 0.95f, 0.05f, 0.78f, light_green);
+  scene.pop_matrix();
 
-    scene.push_matrix();
-    scene.translate(0.35f, 0.75f, -0.45f);
-    //Monitor::render();
-    scene.pop_matrix();
-  }
+  scene.push_matrix();
+  scene.translate(0.35f, 0.75f, -0.45f);
+  // Monitor::render();
+  scene.pop_matrix();
+}
 
-  void leg(Scene& scene)
-  {
-    scene.push_matrix();
-    scene.translate(0.025f, 0.35f, -0.39f);
-    box(scene, 0.05f, 0.7f, 0.78f, light_green);
-    scene.pop_matrix();
-  }
+void leg(Scene& scene)
+{
+  scene.push_matrix();
+  scene.translate(0.025f, 0.35f, -0.39f);
+  box(scene, 0.05f, 0.7f, 0.78f, light_green);
+  scene.pop_matrix();
+}
 
-  void body(Scene& scene)
-  {
-    scene.push_matrix();
-    scene.translate(0.95f, 0.0f, 0.0f);
+void body(Scene& scene)
+{
+  scene.push_matrix();
+  scene.translate(0.95f, 0.0f, 0.0f);
 
-    float t_h = 1.49f;
-    float b_h = 0.05f;
-    float s_h = 0.012f;
-    float u_h = (t_h -2*b_h -3*s_h) / 4.0f;
+  float t_h = 1.49f;
+  float b_h = 0.05f;
+  float s_h = 0.012f;
+  float u_h = (t_h - 2 * b_h - 3 * s_h) / 4.0f;
 
-    scene.push_matrix();
-    scene.translate(0.2f, b_h/2.0f, -0.39f);
-    box(scene, 0.4f, b_h, 0.78f, light_green);
-    scene.translate(0.0f, (b_h+s_h)/2.0f+u_h, 0.0f);
-    box(scene, 0.4f, s_h, 0.68f, light_green);
-    scene.translate(0.0f, s_h+u_h, 0.0f);
-    box(scene, 0.4f, s_h, 0.68f, light_green);
-    scene.translate(0.0f, s_h+u_h, 0.0f);
-    box(scene, 0.4f, s_h, 0.68f, light_green);
-    scene.pop_matrix();
-    scene.push_matrix();
-    scene.translate(0.2f, t_h-b_h/2.0f, -0.39f);
-    box(scene, 0.4f, b_h, 0.78f, light_green);
-    scene.pop_matrix();
+  scene.push_matrix();
+  scene.translate(0.2f, b_h / 2.0f, -0.39f);
+  box(scene, 0.4f, b_h, 0.78f, light_green);
+  scene.translate(0.0f, (b_h + s_h) / 2.0f + u_h, 0.0f);
+  box(scene, 0.4f, s_h, 0.68f, light_green);
+  scene.translate(0.0f, s_h + u_h, 0.0f);
+  box(scene, 0.4f, s_h, 0.68f, light_green);
+  scene.translate(0.0f, s_h + u_h, 0.0f);
+  box(scene, 0.4f, s_h, 0.68f, light_green);
+  scene.pop_matrix();
+  scene.push_matrix();
+  scene.translate(0.2f, t_h - b_h / 2.0f, -0.39f);
+  box(scene, 0.4f, b_h, 0.78f, light_green);
+  scene.pop_matrix();
 
-    float t_d = 0.78f;
-    float u_d = (t_d - 2*b_h - s_h) / 2.0f;
+  float t_d = 0.78f;
+  float u_d = (t_d - 2 * b_h - s_h) / 2.0f;
 
-    scene.push_matrix();
-    scene.translate(0.2f, t_h/2.0f, -b_h/2.0f);
-    box(scene, 0.4f, t_h-2*b_h, b_h, light_green);
-    scene.translate(0.0f, 0.0f, -(b_h+s_h)/2.0f -u_d);
-    box(scene, 0.4f, t_h-2*b_h, s_h, light_green);
-    scene.translate(0.0f, 0.0f, -(b_h+s_h)/2.0f -u_d);
-    box(scene, 0.4f, t_h-2*b_h, b_h, light_green);
-    scene.pop_matrix();
+  scene.push_matrix();
+  scene.translate(0.2f, t_h / 2.0f, -b_h / 2.0f);
+  box(scene, 0.4f, t_h - 2 * b_h, b_h, light_green);
+  scene.translate(0.0f, 0.0f, -(b_h + s_h) / 2.0f - u_d);
+  box(scene, 0.4f, t_h - 2 * b_h, s_h, light_green);
+  scene.translate(0.0f, 0.0f, -(b_h + s_h) / 2.0f - u_d);
+  box(scene, 0.4f, t_h - 2 * b_h, b_h, light_green);
+  scene.pop_matrix();
 
-    scene.pop_matrix();
-  }
+  scene.pop_matrix();
+}
 
-  void render(Scene& scene)
-  {
-    leg(scene);
-    tableTop(scene);
-    body(scene);
-  }
-
+void render(Scene& scene)
+{
+  leg(scene);
+  tableTop(scene);
+  body(scene);
+}
 }
 
 /*void scene(void)
@@ -158,15 +156,22 @@ namespace Table
   );
 
 
-  scene.Material red  (DIFFUSE, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-  scene.Material green(DIFFUSE, glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-  scene.Material blue (DIFFUSE, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+  scene.Material red  (DIFFUSE, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f,
+0.0f, 0.0f));
+  scene.Material green(DIFFUSE, glm::vec3(0.0f, 1.0f, 0.0f), glm::vec3(0.0f,
+0.0f, 0.0f));
+  scene.Material blue (DIFFUSE, glm::vec3(0.0f, 0.0f, 1.0f), glm::vec3(0.0f,
+0.0f, 0.0f));
 
-  scene.Material mirror(MIRROR, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-  scene.Material metal(METALLIC, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
-  scene.Material lamp(DIFFUSE, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(5.0f, 5.0f, 5.0f));
+  scene.Material mirror(MIRROR, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f,
+0.0f, 0.0f));
+  scene.Material metal(METALLIC, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f,
+0.0f, 0.0f));
+  scene.Material lamp(DIFFUSE, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(5.0f,
+5.0f, 5.0f));
 
-  scene.Material grey (DIFFUSE, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f, 0.0f, 0.0f));
+  scene.Material grey (DIFFUSE, glm::vec3(1.0f, 1.0f, 1.0f), glm::vec3(0.0f,
+0.0f, 0.0f));
 
   glm::vec3 a(40.0, 0.0, 0.0);
 

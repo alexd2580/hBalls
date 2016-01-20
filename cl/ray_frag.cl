@@ -1,21 +1,26 @@
 /*{-# RayTracer by AlexD2580 -- where no Harukas were harmed! #-}*/
 
-/**** PUBLISHED UNDER THE DWTFYWWI-LICENSE ****/
+/**** PUBLISHED UNDER THE HAPPY BUNNY LICENSE ****/
 
 /**
-uint8 type;
-uint8 material;
-uin16 __padding__
-float3 passive;
-float3 active;
+## HEADER ##
+type            :: Uint8
+material        :: Uint8
+__padding__     :: Uint16
+roughness       :: Float
+-- 0 -> mirror-like; 1 -> diffuse;
+luminescence    :: Float
+-- values can (and for lamps they should) be greater than 1
+color           :: Float3
 
-data...
+## BODY ##
+payload     :: Data
 
-sphere -> 11*4 byte
-triangle -> 16*4 byte
+sizeof(Sphere) = (6+4) * 4 byte
+sizeof(Triengle) = (6+9) * 4 byte
 **/
 
-#define HEADER_SIZE 7 // floats
+#define HEADER_SIZE 6 // floats
 #define TRIANGLE_SIZE 9
 #define SPHERE_SIZE 4
 
@@ -336,9 +341,9 @@ kernel void trace(global void* general_data,
   float3 eye_dir = (float3){data_f[5], data_f[6], data_f[7]};
   const float3 eye_up = (float3){data_f[8], data_f[9], data_f[10]};
   const float3 eye_left = (float3){data_f[11], data_f[12], data_f[13]};
-  const size_w = data_i[14];
-  const size_h = data_i[15];
-  const num_primitives = data_i[16];
+  const int size_w = data_i[14];
+  const int size_h = data_i[15];
+  const int num_primitives = data_i[16];
 
   /** Pixel coordinates **/
   const int pos_x = get_global_id(0);
@@ -364,8 +369,9 @@ kernel void trace(global void* general_data,
   float3 normal;
 
   uchar material;
-  float3 passive;
-  float3 active;
+  float roughness;
+  float luminescence;
+  float3 color;
 
   float3 brdf = (float3){1.0f, 1.0f, 1.0f};
 
@@ -378,11 +384,12 @@ kernel void trace(global void* general_data,
     if(closest == 0)
       break; // nothing hit
     material = ((global uchar*)closest)[1];
-    passive = (float3){closest[1], closest[2], closest[3]};
-    active = (float3){closest[4], closest[5], closest[6]};
+    roughness = closest[1];
+    luminescence = closest[2];
+    color = (float3){closest[3], closest[4], closest[5]};
     pos = res[0];
     normal = res[1];
-    frag += active * brdf;
+    frag += color * luminescence * brdf;
 
     ulong guess = xorshift1024star(prng) % max_bounces;
     if(guess <= itr)
@@ -393,7 +400,7 @@ kernel void trace(global void* general_data,
     case DIFFUSE:
       eye_pos = pos;
       eye_dir = oriented_uniform_sample_hemisphere(prng, normal);
-      brdf *= 2.0f * passive * dot(normal, eye_dir);
+      brdf *= 2.0f * color * dot(normal, eye_dir);
       break;
     case MIRROR:
       eye_pos = pos;

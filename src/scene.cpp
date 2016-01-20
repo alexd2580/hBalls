@@ -18,9 +18,10 @@ using namespace std;
 
 Material::Material(uint8_t type_,
                    float roughness_,
-                   glm::vec3 passive_,
-                   glm::vec3 active_)
-    : type(type_), roughness(roughness_), passive(passive_), active(active_)
+                   float luminescence_,
+                   glm::vec3 const& color_)
+    : type(type_), roughness(roughness_), luminescence(luminescence_),
+      color(color_)
 {
 }
 
@@ -154,9 +155,10 @@ void Scene::push_header(uint8_t const type, Material const& material)
   uint8_t* thisObj_u = (uint8_t*)(m_objects_buffer + m_objects_float_index);
   thisObj_u[0] = type;
   thisObj_u[1] = material.type;
-  m_objects_float_index++;
-  push_vec3(material.passive);
-  push_vec3(material.active);
+  m_objects_buffer[m_objects_float_index + 1] = material.roughness;
+  m_objects_buffer[m_objects_float_index + 2] = material.luminescence;
+  m_objects_float_index += 3;
+  push_vec3(material.color);
   m_objects_count++;
 }
 
