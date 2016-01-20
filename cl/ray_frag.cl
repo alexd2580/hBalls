@@ -166,6 +166,9 @@ sample_hemisphere(global PRNG* prng, float3 dir, float power, float angle)
 /*** RANDOM ***/
 /**** MAIN  ****/
 
+/**
+ * https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
+ */
 void traceTriangle(float3 eye_pos,
                    float3 eye_dir, // normalized
                    global float* triangle_,
@@ -220,6 +223,12 @@ void traceTriangle(float3 eye_pos,
   return;
 }
 
+/**
+ * Given eye_pos, eye_dir, and sphere_ computes the intersection point
+ * of the ray with the sphere (if there is an intersection)
+ * and updates min_depth and closest, if the distance from eye_pos
+ * to the hit point is smaller than *min_depth.
+ */
 void traceSphere(float3 eye_pos,
                  float3 eye_dir, // normalized
                  global float* sphere_,
@@ -262,6 +271,10 @@ void traceSphere(float3 eye_pos,
   return;
 }
 
+/**
+ * Lookup loop. Currently running in O(n) on a list of primitives.
+ * TODO Replace by lookup structure.
+ */
 global float* runTraceObjects(float3 eye_pos,
                               float3 eye_dir, // normalized
                               global float* objects,
@@ -307,7 +320,7 @@ global float* runTraceObjects(float3 eye_pos,
  */
 kernel void trace(global void* general_data,
                   global float* objects,
-                  global float* octree,
+                  global float* octree, // EMPTY!! NOT USED!!
                   global uint* frame_c,
                   global float4* frame_f,
                   global float* samples,
@@ -345,7 +358,8 @@ kernel void trace(global void* general_data,
   float3 frag = (float3){0.0f, 0.0f, 0.0f};
   float3 res[2];
 
-  //------------------------------------------------------------------------//
+  //--------------------------------------------------------------------------//
+
   float3 pos;
   float3 normal;
 
@@ -355,8 +369,9 @@ kernel void trace(global void* general_data,
 
   float3 brdf = (float3){1.0f, 1.0f, 1.0f};
 
+  const uint max_bounces = 5;
   global float* closest = 0;
-  for(uint itr = 0; itr < 5 && dot(brdf, brdf) > 0.9f; itr++)
+  for(uint itr = 0; itr < max_bounces; itr++)
   {
     closest =
         runTraceObjects(eye_pos, eye_dir, objects, num_primitives, octree, res);
@@ -368,6 +383,10 @@ kernel void trace(global void* general_data,
     pos = res[0];
     normal = res[1];
     frag += active * brdf;
+
+    ulong guess = xorshift1024star(prng) % max_bounces;
+    if(guess <= itr)
+      break;
 
     switch(material)
     {
@@ -392,7 +411,7 @@ kernel void trace(global void* general_data,
     }
   }
 
-  //------------------------------------------------------------------------//
+  //--------------------------------------------------------------------------//
 
   float4 total = frame_f[id] + (float4){frag.x, frag.y, frag.z, 0.0};
   frame_f[id] = total;

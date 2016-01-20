@@ -86,7 +86,7 @@ void create_scene(Scene& scene)
 
   Material const mirror(MIRROR, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
   Material const metal(METALLIC, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
-  Material const lamp(DIFFUSE, 0.0f, glm::vec3(1.0f), glm::vec3(15.0f));
+  Material const lamp(DIFFUSE, 0.0f, glm::vec3(1.0f), glm::vec3(30.0f));
 
   Material const white(DIFFUSE, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
 
@@ -113,8 +113,8 @@ int main(void)
   cout << "[Main] Entry." << endl;
 
   /** SDL **/
-  unsigned int const size_w = 800;
-  unsigned int const size_h = 600;
+  unsigned int const size_w = 640;
+  unsigned int const size_h = 480;
   uint32_t* frame_buffer =
       (uint32_t*)alloca(size_w * size_h * sizeof(uint32_t));
 
