@@ -65,13 +65,14 @@ public:
   /**
    * Creates a remote buffer of *byte_size* bytes size and fills it with *bytes*
    */
-  RemoteBuffer allocate_space(size_t byte_size, void* bytes) const;
+  RemoteBuffer allocate(size_t byte_size) const;
+  RemoteBuffer allocate(size_t byte_size, void* bytes) const;
 
   /**
    * Creates a command queue.
    * @return A new command queue object
    */
-  cl::CommandQueue createCommandQueue(void) const;
+  cl::CommandQueue create_queue(void) const;
 };
 
 class Kernel
@@ -104,9 +105,8 @@ public:
   /**
    * Assigns the kernel parameters.
    * @param nr - The position of the parameter [0..n-1]
-   * @param data - A pointer to the argument value
+   * @param buf - The buffer to link
    */
-  template <typename T> void set_argument(unsigned int nr, T const& data);
   void set_argument(unsigned int nr, RemoteBuffer const& buf);
 
   /**

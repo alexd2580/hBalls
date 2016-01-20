@@ -44,21 +44,21 @@ void push_vector(float* data, glm::vec3 const& vec)
 
 Octree::Octree(AABB const& aabb_) : aabb(aabb_)
 {
-  for (int i = 0; i < 8; i++)
+  for(int i = 0; i < 8; i++)
     sub[i] = nullptr;
 }
 
 Octree::Octree(glm::vec3 const& lower, glm::vec3 const& upper)
     : aabb(lower, upper)
 {
-  for (int i = 0; i < 8; i++)
+  for(int i = 0; i < 8; i++)
     sub[i] = nullptr;
 }
 
 Octree::~Octree(void)
 {
-  for (int i = 0; i < 8; i++)
-    if (sub[i] != nullptr)
+  for(int i = 0; i < 8; i++)
+    if(sub[i] != nullptr)
       delete sub[i];
 }
 
@@ -70,13 +70,13 @@ Octree* Octree::insert(unsigned int val, AABB const& space)
   glm::vec3 lower;
   glm::vec3 upper;
 
-  if (space.is_subspace_of(aabb))
+  if(space.is_subspace_of(aabb))
   {
-    for (int i = 0; i < 8; i++)
+    for(int i = 0; i < 8; i++)
     {
-      if (sub[i] != nullptr)
+      if(sub[i] != nullptr)
       {
-        if (space.is_subspace_of(sub[i]->aabb))
+        if(space.is_subspace_of(sub[i]->aabb))
         {
           /* it's guaranteed that the given space is a subspace of
             sub[i], therefore it doesn't have to be extended. */
@@ -88,17 +88,17 @@ Octree* Octree::insert(unsigned int val, AABB const& space)
       {
         lower = aabb.lower;
         int id = i;
-        if (id / 4 == 1)
+        if(id / 4 == 1)
           lower.x += size / 2.0f;
-        if ((id % 4) / 2 == 1)
+        if((id % 4) / 2 == 1)
           lower.y += size / 2.0f;
-        if (id % 2 == 1)
+        if(id % 2 == 1)
           lower.z += size / 2.0f;
 
         upper = lower + (size / 2.0f) * glm::vec3(1.0f);
         AABB subspace(lower, upper);
 
-        if (space.is_subspace_of(subspace))
+        if(space.is_subspace_of(subspace))
         {
           /* it's guaranteed that the given space is a subspace of
             sub[i], therefore it doesn't have to be extended. */
@@ -117,17 +117,17 @@ Octree* Octree::insert(unsigned int val, AABB const& space)
   unsigned int id = 0;
   glm::vec3 new_lower(aabb.lower);
 
-  if (offset.x > 0)
+  if(offset.x > 0)
   {
     id += 4;
     new_lower.x -= size;
   }
-  if (offset.y > 0)
+  if(offset.y > 0)
   {
     id += 2;
     new_lower.y -= size;
   }
-  if (offset.z > 0)
+  if(offset.z > 0)
   {
     id += 1;
     new_lower.z -= size;
@@ -145,12 +145,12 @@ Octree* Octree::insert(unsigned int val, AABB const& space)
 void Octree::print_info(void) const
 {
   cout << "AABB: " << aabb << " : ";
-  for (auto i = primitives.begin(); i != primitives.end(); i++)
+  for(auto i = primitives.begin(); i != primitives.end(); i++)
     cout << *i << " ";
   cout << endl;
-  for (int i = 0; i < 8; i++)
+  for(int i = 0; i < 8; i++)
   {
-    if (sub[i] != nullptr)
+    if(sub[i] != nullptr)
     {
       cout << "Subtree: ";
       sub[i]->print_info();
@@ -187,7 +187,7 @@ unsigned int Octree::print_to_array(float* buffer_f) const
 
   buffer_i[offset] = (int)primitives.size();
   offset++;
-  for (auto i = primitives.begin(); i != primitives.end(); i++)
+  for(auto i = primitives.begin(); i != primitives.end(); i++)
   {
     buffer_i[offset] = *i;
     offset++;
@@ -195,9 +195,9 @@ unsigned int Octree::print_to_array(float* buffer_f) const
 
   unsigned int subsize = 0;
 
-  for (int i = 0; i < 8; i++)
+  for(int i = 0; i < 8; i++)
   {
-    if (sub[i] == nullptr)
+    if(sub[i] == nullptr)
       buffer_i[offset + i] = -1;
     else
     {
@@ -217,14 +217,14 @@ Octree* Octree::reconstruct(float* data_f)
   int* data_i = (int*)data_f + 6;
   int size = *data_i;
   data_i++;
-  for (int i = 0; i < size; i++)
+  for(int i = 0; i < size; i++)
     oct->primitives.push_back(data_i[i]);
   data_i += size;
 
-  for (int i = 0; i < 8; i++)
+  for(int i = 0; i < 8; i++)
   {
     int off = data_i[i];
-    if (off == -1)
+    if(off == -1)
       oct->sub[i] = nullptr;
     else
       oct->sub[i] = Octree::reconstruct(data_f + off);

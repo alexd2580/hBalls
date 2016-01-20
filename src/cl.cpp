@@ -119,7 +119,7 @@ void OpenCLException::print(void)
 
 Environment::Environment(void)
 {
-  cout << "[OpenCL] Initializing OpenCL environment." << endl;
+  cout << "[OpenCL] Initializing." << endl;
 
   vector<cl::Platform> platforms;
   error = cl::Platform::get(&platforms);
@@ -139,8 +139,8 @@ Environment::Environment(void)
   }
 
   // SELECT CPU VS GPU HERE!!!!
-  m_platform = platforms[1];
-  list_devices(m_devices, m_platform, CL_DEVICE_TYPE_CPU);
+  m_platform = platforms[0];
+  list_devices(m_devices, m_platform, CL_DEVICE_TYPE_GPU);
 
   m_context = cl::Context(m_devices, nullptr, nullptr, nullptr, &error);
   if(error != CL_SUCCESS)
@@ -149,14 +149,30 @@ Environment::Environment(void)
     throw OpenCLException(error, msg);
   }
 
-  cout << "[OpenCL] Started." << endl;
+  cout << "[OpenCL] Done." << endl;
 }
 
-RemoteBuffer Environment::allocate_space(size_t byte_size, void* bytes) const
+RemoteBuffer Environment::allocate(size_t byte_size) const
+{
+  cl::Buffer remote_buffer(
+      m_context, CL_MEM_READ_WRITE | 0, byte_size, nullptr, &error);
+  if(error != CL_SUCCESS)
+  {
+    string msg("Could not create remote buffer of size " +
+               std::to_string(byte_size) + ".");
+    throw OpenCLException(error, msg);
+  }
+
+  RemoteBuffer rb;
+  rb.size = byte_size;
+  rb.buffer = remote_buffer;
+  return rb;
+}
+
+RemoteBuffer Environment::allocate(size_t byte_size, void* bytes) const
 {
   cl::Buffer remote_buffer(m_context,
-                           CL_MEM_READ_WRITE |
-                               (bytes != nullptr ? CL_MEM_COPY_HOST_PTR : 0),
+                           CL_MEM_READ_WRITE | CL_MEM_COPY_HOST_PTR,
                            byte_size,
                            bytes,
                            &error);
@@ -173,7 +189,7 @@ RemoteBuffer Environment::allocate_space(size_t byte_size, void* bytes) const
   return rb;
 }
 
-cl::CommandQueue Environment::createCommandQueue(void) const
+cl::CommandQueue Environment::create_queue(void) const
 {
   cl::CommandQueue queue(m_context, m_devices[0], 0, &error);
   if(error != CL_SUCCESS)
@@ -309,19 +325,14 @@ void Kernel::make(Environment const& c)
   create_kernel();
 }
 
-template <typename T> void Kernel::set_argument(unsigned int nr, T const& arg)
-{
-  error = m_kernel.setArg(nr, arg);
-  if(error != CL_SUCCESS)
-  {
-    string msg("Could not set kernel argument.");
-    throw OpenCLException(error, msg);
-  }
-}
-
 void Kernel::set_argument(unsigned int nr, RemoteBuffer const& buf)
 {
-  set_argument(nr, &buf.buffer);
+  error = m_kernel.setArg(nr, buf.buffer);
+  if(error != CL_SUCCESS)
+  {
+    string msg("Could not set kernel argument " + std::to_string(nr) + ".");
+    throw OpenCLException(error, msg);
+  }
 }
 
 cl::Event Kernel::enqueue(size_t const width,
@@ -331,7 +342,7 @@ cl::Event Kernel::enqueue(size_t const width,
   error = queue.enqueueNDRangeKernel(m_kernel,
                                      cl::NullRange,
                                      cl::NDRange(width, 0, 0),
-                                     cl::NDRange(1, 0, 0),
+                                     cl::NullRange, // cl::NDRange(width, 0, 0),
                                      nullptr,
                                      &event);
 
@@ -349,9 +360,9 @@ cl::Event Kernel::enqueue(size_t const width,
 {
   cl::Event event;
   error = queue.enqueueNDRangeKernel(m_kernel,
-                                     cl::NullRange,
+                                     cl::NDRange(0, 0),
                                      cl::NDRange(width, height),
-                                     cl::NDRange(width, 1),
+                                     cl::NullRange, // cl::NDRange(width, 1),
                                      nullptr,
                                      &event);
   if(error != CL_SUCCESS)

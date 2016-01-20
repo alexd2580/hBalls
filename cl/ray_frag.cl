@@ -16,6 +16,8 @@ triangle -> 16*4 byte
 **/
 
 #define HEADER_SIZE 7 // floats
+#define TRIANGLE_SIZE 9
+#define SPHERE_SIZE 4
 
 #define TRIANGLE 1
 #define SPHERE 2
@@ -244,144 +246,50 @@ void traceSphere(float3 eye_pos,
   return;
 }
 
-bool intersects_cube(float3 eye_pos,
-                     float3 eye_dir, // normalized
-                     float3 lower,
-                     float3 private upper)
-{
-  float latest_entry = -1.0f / 0.0f;
-  float earliest_exit = 1.0f / 0.0f;
-
-  float lower_intersect, upper_intersect;
-  if(eye_dir.x == 0.0f)
-  {
-    if(eye_pos.x < lower.x || eye_pos.x > upper.x)
-      return false;
-  }
-  else
-  {
-    lower_intersect = lower.x - eye_pos.x / eye_dir.x;
-    upper_intersect = upper.x - eye_pos.x / eye_dir.x;
-    latest_entry = max(latest_entry, min(lower_intersect, upper_intersect));
-    earliest_exit = min(earliest_exit, max(lower_intersect, upper_intersect));
-  }
-  if(eye_dir.y == 0.0f)
-  {
-    if(eye_pos.y < lower.y || eye_pos.y > upper.y)
-      return false;
-  }
-  else
-  {
-    lower_intersect = lower.y - eye_pos.y / eye_dir.y;
-    upper_intersect = upper.y - eye_pos.y / eye_dir.y;
-    latest_entry = max(latest_entry, min(lower_intersect, upper_intersect));
-    earliest_exit = min(earliest_exit, max(lower_intersect, upper_intersect));
-  }
-  if(eye_dir.z == 0.0f)
-  {
-    if(eye_pos.z < lower.z || eye_pos.z > upper.z)
-      return false;
-  }
-  else
-  {
-    lower_intersect = lower.z - eye_pos.z / eye_dir.z;
-    upper_intersect = upper.z - eye_pos.z / eye_dir.z;
-    latest_entry = max(latest_entry, min(lower_intersect, upper_intersect));
-    earliest_exit = min(earliest_exit, max(lower_intersect, upper_intersect));
-  }
-
-  return latest_entry < earliest_exit && earliest_exit > 0.0f;
-}
-
 global float* runTraceObjects(float3 eye_pos,
                               float3 eye_dir, // normalized
                               global float* objects,
-                              global float* octree,
+                              const int num_primitives,
+                              global float* octree, // unused
                               float3 res[])
 {
-  global float* object;
+  global float* object = objects;
   global float* closest = 0;
   uchar type = *((global uchar*)objects);
   float min_depth = 1.0f / 0.0f;
 
-  global float* octrees_todo[100]; // TODO analyze approximation
-  octrees_todo[0] = octree;
-  octrees_todo[1] = 0;
-  int index = 0;
-  int next_free = 1;
-
-  float3 lower;
-  float3 upper;
-  int size;
-
-  global float* cur_octree;
-  global int* cur_octree_i;
-
-  while(index < next_free)
+  for(int index = 0; index < num_primitives; index++)
   {
-    cur_octree = octrees_todo[index];
-    index++;
-
-    lower = (float3){cur_octree[0], cur_octree[1], cur_octree[2]};
-    upper = (float3){cur_octree[3], cur_octree[4], cur_octree[5]};
-    if(intersects_cube(eye_pos, eye_dir, lower, upper))
+    type = *(global uchar*)object;
+    switch(type)
     {
-      printf("intersect\n");
-    }
-    else
-    {
-      printf("miss\n");
-      continue;
-    }
-
-    cur_octree_i = (global int*)(cur_octree + 6);
-    size = *cur_octree_i;
-    printf("%d\n", size);
-    cur_octree_i++;
-    for(int i = 0; i < size; i++)
-    {
-      object = objects + *cur_octree_i;
-      cur_octree_i++;
-      type = *(global uchar*)object;
-      switch(type)
-      {
-      case TRIANGLE:
-        traceTriangle(eye_pos, eye_dir, object, &closest, &min_depth, res);
-        break;
-      case SPHERE:
-        traceSphere(eye_pos, eye_dir, object, &closest, &min_depth, res);
-        break;
-      default:
-        break;
-      }
-    }
-
-    int offset;
-    for(int i = 0; i < 8; i++)
-    {
-      offset = *cur_octree_i;
-      cur_octree_i++;
-      if(offset != -1)
-      {
-        octrees_todo[next_free] = cur_octree + offset;
-        next_free++;
-      }
+    case TRIANGLE:
+      traceTriangle(eye_pos, eye_dir, object, &closest, &min_depth, res);
+      object += HEADER_SIZE + TRIANGLE_SIZE;
+      break;
+    case SPHERE:
+      traceSphere(eye_pos, eye_dir, object, &closest, &min_depth, res);
+      object += HEADER_SIZE + SPHERE_SIZE;
+      break;
+    default:
+      break;
     }
   }
   return closest;
 }
 
-/*
-fov should be an array of floats:
-fovy, aspect,
-posx, posy, posz,
-dirx, diry, dirz,
-upx, upy, upz,
-leftx, lefty, leftz,
-size_x, size_y <--- TWO INTS!
-*/
-
-kernel void trace(global float* fov,
+/**
+ * Main kernel function.
+ * general_data is an array of 17 4-byte units:
+ * fovy, aspect :: Float
+ * posx, posy, posz :: Float
+ * dirx, diry, dirz :: Float
+ * upx, upy, upz :: Float
+ * leftx, lefty, leftz :: Float
+ * size_w, size_h :: Int
+ * num_primitives :: Int
+ */
+kernel void trace(global void* general_data,
                   global float* objects,
                   global float* octree,
                   global uint* frame_c,
@@ -389,15 +297,19 @@ kernel void trace(global float* fov,
                   global float* samples,
                   global PRNG* prng)
 {
-  float fovy = fov[0];
-  float aspect = fov[1];
+  global float* data_f = (global float*)general_data;
+  global int* data_i = (global int*)general_data;
 
-  float3 eye_pos = (float3){fov[2], fov[3], fov[4]};
-  float3 eye_dir = (float3){fov[5], fov[6], fov[7]};
-  float3 eye_up = (float3){fov[8], fov[9], fov[10]};
-  float3 eye_left = (float3){fov[11], fov[12], fov[13]};
-  int size_w = ((global int*)(fov + 14))[0];
-  int size_h = ((global int*)(fov + 14))[1];
+  const float fovy = data_f[0];
+  const float aspect = data_f[1];
+
+  float3 eye_pos = (float3){data_f[2], data_f[3], data_f[4]};
+  float3 eye_dir = (float3){data_f[5], data_f[6], data_f[7]};
+  const float3 eye_up = (float3){data_f[8], data_f[9], data_f[10]};
+  const float3 eye_left = (float3){data_f[11], data_f[12], data_f[13]};
+  const size_w = data_i[14];
+  const size_h = data_i[15];
+  const num_primitives = data_i[16];
 
   /** Pixel coordinates **/
   const int pos_x = get_global_id(0);
@@ -430,7 +342,8 @@ kernel void trace(global float* fov,
   global float* closest = 0;
   for(uint itr = 0; itr < 5 && dot(brdf, brdf) > 0.9f; itr++)
   {
-    closest = runTraceObjects(eye_pos, eye_dir, objects, octree, res);
+    closest =
+        runTraceObjects(eye_pos, eye_dir, objects, num_primitives, octree, res);
     if(closest == 0)
       break; // nothing hit
     material = ((global uchar*)closest)[1];

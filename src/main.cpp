@@ -1,6 +1,7 @@
 #include <iostream>
 #include <cmath>
 #include <glm/glm.hpp>
+#include <glm/gtc/constants.hpp>
 #include <string>
 
 #define __USE_BSD // to get usleep
@@ -12,62 +13,69 @@ abstime.tv_sec += cooldown;
 pthread_cond_timedwait(&notifier, &mutex, &abstime);*/
 
 #include "scene_helper.hpp"
-#include "cl_helper.hpp"
 #include "sdl.hpp"
+#include "cl.hpp"
 
 using namespace std;
 using namespace OpenCL;
 
-#define F_PI ((float)M_PI)
-
-void prepare_view(int const size_w, int const size_h)
+void push_camera(cl::CommandQueue const& queue,
+                 Camera const& camera,
+                 int const size_w,
+                 int const size_h,
+                 unsigned int const object_count,
+                 RemoteBuffer const& data_mem)
 {
-  glm::vec3 cam_pos(-0.3f, 1.2f, 0.0f);
-  glm::vec3 cam_dir(0.5f, -0.2, -1);
-  glm::vec3 cam_up(0.0f, 1.0f, 0.0f);
-
-  float fov = F_PI / 4.f;
-
-  cam_dir = glm::normalize(cam_dir);
-  cam_up = glm::normalize(cam_up);
-  glm::vec3 cam_left = glm::cross(cam_up, cam_dir);
-  cam_up = glm::cross(cam_dir, cam_left);
-
-  /*
-  fov should be an array of floats:
-  fovy, aspect,
-  posx, posy, posz,
-  dirx, diry, dirz,
-  upx, upy, upz,
-  -- add leftx, lefty, leftz,
-  size_x, size_y <-- IT'S TWO INTS!!
-  */
-  float data[16];
-  data[0] = fov;
+  /**
+   * Main kernel function.
+   * general_data is an array of 17 4-byte units:
+   * fovy, aspect :: Float
+   * posx, posy, posz :: Float
+   * dirx, diry, dirz :: Float
+   * upx, upy, upz :: Float
+   * leftx, lefty, leftz :: Float
+   * size_w, size_h :: Int
+   * num_primitives :: Int
+   */
+  float data[17];
+  data[0] = camera.fov;
   data[1] = float(size_w) / float(size_h);
-  data[2] = cam_pos.x;
-  data[3] = cam_pos.y;
-  data[4] = cam_pos.z;
-  data[5] = cam_dir.x;
-  data[6] = cam_dir.y;
-  data[7] = cam_dir.z;
-  data[8] = cam_up.x;
-  data[9] = cam_up.y;
-  data[10] = cam_up.z;
-  data[11] = cam_left.x;
-  data[12] = cam_left.y;
-  data[13] = cam_left.z;
+  data[2] = camera.pos.x;
+  data[3] = camera.pos.y;
+  data[4] = camera.pos.z;
+  data[5] = camera.dir.x;
+  data[6] = camera.dir.y;
+  data[7] = camera.dir.z;
+  data[8] = camera.up.x;
+  data[9] = camera.up.y;
+  data[10] = camera.up.z;
+  data[11] = camera.left.x;
+  data[12] = camera.left.y;
+  data[13] = camera.left.z;
 
   int* data_i = (int*)(data + 14);
   data_i[0] = size_w;
   data_i[1] = size_h;
+  data_i[2] = object_count;
 
-  CLHelper::write_buffer(CLHelper::fov_mem, data);
+  writeBufferBlocking(queue, data_mem, data);
+}
+
+void push_data(cl::CommandQueue const& queue,
+               Scene const& scene,
+               RemoteBuffer const& objects_mem)
+{
+
+  size_t size = scene.objects_byte_size();
+  (void)size;
+  // TODO fix writeBuffer, so that is doesn't copy EVERYTHING
+  float const* data = scene.get_objects();
+  writeBufferBlocking(queue, objects_mem, data);
 }
 
 void create_scene(Scene& scene)
 {
-  cout << "[Main] Queueing models" << endl;
+  cout << "[Main] Queueing models." << endl;
 
   Material const red(
       DIFFUSE, 0.0f, glm::vec3(1.0f, 0.0f, 0.0f), glm::vec3(0.0f));
@@ -78,7 +86,7 @@ void create_scene(Scene& scene)
 
   Material const mirror(MIRROR, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
   Material const metal(METALLIC, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
-  Material const lamp(DIFFUSE, 0.0f, glm::vec3(1.0f), glm::vec3(5.0f));
+  Material const lamp(DIFFUSE, 0.0f, glm::vec3(1.0f), glm::vec3(15.0f));
 
   Material const white(DIFFUSE, 0.0f, glm::vec3(1.0f), glm::vec3(0.0f));
 
@@ -89,25 +97,24 @@ void create_scene(Scene& scene)
 
   scene.push_matrix();
   scene.translate(2.8f, 2.8f, -1.5f);
-  box(scene, 10.4f, 0.4f, 0.4f, lamp);
+  box(scene, 0.4f, 0.4f, 0.4f, lamp);
   scene.pop_matrix();
 
   scene.push_matrix();
   scene.translate(0.2f, 0.0f, -3.f + 0.85f);
   Table::render(scene);
   scene.pop_matrix();
+
+  cout << "[Main] Done." << endl;
 }
 
 int main(void)
 {
-  cout << "[Main] Launched." << endl;
+  cout << "[Main] Entry." << endl;
 
-  string tracer("./cl/ray_frag.cl");
-  string tracer_main("trace");
-  OpenCL::Kernel path_tracer(tracer, tracer_main);
-
-  unsigned int const size_w = 1;
-  unsigned int const size_h = 1;
+  /** SDL **/
+  unsigned int const size_w = 800;
+  unsigned int const size_h = 600;
   uint32_t* frame_buffer =
       (uint32_t*)alloca(size_w * size_h * sizeof(uint32_t));
 
@@ -117,37 +124,86 @@ int main(void)
     return 1;
   }
 
-  float samples = 0.0f;
-
   try
   {
+    /** OpenCL **/
+    Environment env;
+
+    /** Kernel **/
+    string tracer("./cl/ray_frag.cl");
+    string tracer_main("trace");
+    OpenCL::Kernel path_tracer(tracer, tracer_main);
+
+    /** Scene **/
     size_t const primitive_size = 500 * 16;
-    size_t const octree_size = 3000; // TODO find better approximations!
-
-    CLHelper::init(size_w, size_h, path_tracer, primitive_size, octree_size);
-
-    AABB aabb(glm::vec3(-10.0f), glm::vec3(10.0f));
-
-    Scene scene(size_w, size_h, primitive_size, aabb);
-    scene.printInfo();
-
-    prepare_view(size_w, size_h);
+    Scene scene(primitive_size);
     create_scene(scene);
-    CLHelper::push_scene(scene);
 
+    /** PRNG **/
+    unsigned long prng[17];
+    for(int i = 0; i < 16; i++)
+      prng[i] = (unsigned long)rand() << 32 | (unsigned long)rand();
+    prng[16] = 0;
+
+    /** Buffers **/
+    RemoteBuffer /*float */ data_mem = env.allocate(17 * sizeof(float));
+    RemoteBuffer /*float */ objects_mem =
+        env.allocate(primitive_size * sizeof(float));
+    RemoteBuffer /*float */ octree_mem = env.allocate(1);
+    RemoteBuffer /*char4 */ frame_c_mem =
+        env.allocate(size_h * size_w * sizeof(uint32_t));
+    RemoteBuffer /*float4*/ frame_f_mem =
+        env.allocate(size_h * size_w * 4 * sizeof(float));
+    RemoteBuffer /*float */ samples_mem = env.allocate(sizeof(float));
+    RemoteBuffer /*PRNG  */ prng_mem =
+        env.allocate(17 * sizeof(unsigned long), prng);
+
+    /** Prepare Kernel **/
+    path_tracer.make(env);
+    path_tracer.set_argument(0, data_mem);
+    path_tracer.set_argument(1, objects_mem);
+    path_tracer.set_argument(2, octree_mem);
+    path_tracer.set_argument(3, frame_c_mem);
+    path_tracer.set_argument(4, frame_f_mem);
+    path_tracer.set_argument(5, samples_mem);
+    path_tracer.set_argument(6, prng_mem);
+
+    /** Camera **/
+    Camera c;
+    c.pos = glm::vec3(-0.3f, 1.2f, 0.0f);
+    c.dir = glm::vec3(0.5f, -0.2, -1);
+    c.up = glm::vec3(0.0f, 1.0f, 0.0f);
+
+    c.fov = glm::quarter_pi<float>();
+
+    c.dir = glm::normalize(c.dir);
+    c.up = glm::normalize(c.up);
+    c.left = glm::cross(c.up, c.dir);
+    c.up = glm::cross(c.dir, c.left);
+
+    /** CommandQueue **/
+    cl::CommandQueue queue = env.create_queue();
+
+    /** Push data to remote buffers **/
+    push_camera(queue, c, size_w, size_h, scene.objects_count(), data_mem);
+    push_data(queue, scene, objects_mem);
+
+    float samples = 0.0f;
     while(!SDL::die)
     {
       SDL::handleEvents();
       samples++;
-      CLHelper::write_buffer(CLHelper::samples_mem, &samples);
-      CLHelper::render(path_tracer);
-      CLHelper::read_buffer(CLHelper::frame_c_mem, frame_buffer);
+      writeBufferBlocking(queue, samples_mem, &samples);
+      /** RUN KERNEL **/
+      path_tracer.enqueue(size_w, size_h, queue);
+      queue.finish();
+      /** Read result from char-framebuffer **/
+      readBufferBlocking(queue, frame_c_mem, frame_buffer);
+      /** Draw it **/
       SDL::drawFrame(frame_buffer);
       cout << "[Main] Samples: " << (int)samples << endl;
       cout.flush();
     }
-
-    CLHelper::close();
   }
   catch(OpenCLException& e)
   {
@@ -155,7 +211,7 @@ int main(void)
   }
 
   SDL::close();
-  cout << "[Main] Closed." << endl;
+  cout << "[Main] Exit." << endl;
   return 0;
 }
 

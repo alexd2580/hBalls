@@ -4,7 +4,6 @@
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <stack>
-#include "octree.hpp"
 
 /** PRIMITIVE TYPE **/
 #define TRIANGLE ((uint8_t)1)
@@ -38,22 +37,20 @@ struct Material
   glm::vec3 const active;
 };
 
+struct Camera
+{
+  glm::vec3 pos;
+  glm::vec3 dir;
+  glm::vec3 up;
+  float fov;
+  glm::vec3 left;
+};
 /**
  * Used to define the scene in a
  */
 class Scene
 {
 private:
-  /* SCREEN SIZES */
-  unsigned int const size_w;
-  unsigned int const size_h;
-
-  int const view_min_x;
-  int const view_max_x;
-  int const view_min_y;
-  int const view_max_y;
-  /* SCREEN SIZES */
-
   /**
    * Matrix stack for model matrix
    */
@@ -63,20 +60,16 @@ private:
   /**
    * The base pointer and the current offset.
    */
-  float* objects_buffer;
-  unsigned int objects_buffer_i;
-
-  Octree* octree;
+  float* m_objects_buffer;
+  unsigned int m_objects_float_index;
+  unsigned int m_objects_count;
 
   void push_vec3(glm::vec3 const& v);
   void push_vertex(glm::vec3 const& v);
   void push_header(uint8_t const type, Material const& material);
 
 public:
-  Scene(unsigned int const w,
-        unsigned int const h,
-        size_t const primitive_size,
-        AABB const& aabb);
+  Scene(size_t const primitive_size);
   ~Scene(void);
 
   /**
@@ -89,8 +82,8 @@ public:
    * Returns the scene buffer size in bytes (the fileld part)
    */
   size_t objects_byte_size(void) const;
+  unsigned int objects_count(void) const;
   float const* get_objects(void) const;
-  Octree const* get_octree(void) const;
 
   void pop_matrix(void);
   void push_matrix(void);

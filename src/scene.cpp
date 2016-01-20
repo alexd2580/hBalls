@@ -83,72 +83,32 @@ struct interleave_ // TODO what is this?
   float color;
 };
 
-void Scene::printInfo(void)
+Scene::Scene(size_t const primitive_size)
 {
-  cout << "OpenCGL info - current state:" << endl;
-  cout << "Size: w=" << size_w << " h=" << size_h << endl;
-  cout << "Viewport: x=" << view_min_x << "->" << view_max_x << " ";
-  cout << "y=" << view_min_y << "->" << view_max_y << endl;
-  cout << endl;
-}
-
-Scene::Scene(unsigned int w,
-             unsigned int h,
-             size_t const primitive_size,
-             AABB const& aabb)
-    : size_w(w), size_h(h), view_min_x(-int(size_w) / 2),
-      view_max_x(size_w / 2), view_min_y(-int(size_h) / 2),
-      view_max_y(size_h / 2)
-{
-  objects_buffer = new float[primitive_size];
-  objects_buffer_i = 0;
-  octree = new Octree(aabb);
+  m_objects_buffer = new float[primitive_size];
+  m_objects_float_index = 0;
+  m_objects_count = 0;
   push_matrix();
 }
 
-Scene::~Scene(void)
-{
-  delete[] objects_buffer;
-  delete octree;
-}
+Scene::~Scene(void) { delete[] m_objects_buffer; }
 
-void Scene::clear_buffers(void)
-{
-  objects_buffer_i = 0;
-  AABB const& aabb = octree->aabb;
-  Octree* clean = new Octree(aabb);
-  delete octree;
-  octree = clean;
-}
+void Scene::clear_buffers(void) { m_objects_float_index = 0; }
 
 __attribute__((pure)) size_t Scene::objects_byte_size(void) const
 {
-  return objects_buffer_i * sizeof(float);
+  return m_objects_float_index * sizeof(float);
+}
+
+__attribute__((pure)) unsigned int Scene::objects_count(void) const
+{
+  return m_objects_count;
 }
 
 __attribute__((pure)) float const* Scene::get_objects(void) const
 {
-  return objects_buffer;
+  return m_objects_buffer;
 }
-
-__attribute__((pure)) Octree const* Scene::get_octree(void) const
-{
-  return octree;
-}
-
-/*#include"pngwrapper.hpp"
-
-void printScreen(string& fpath, OpenCL& cl)
-{
-    flushRTBuffer(cl);
-    cout << "Reading buffer" << endl;
-    OpenCL::readBufferBlocking(framebufferqueue,
-      frameBuf_mem, size_w*size_h*sizeof(uint8_t), frame_buffer);
-    cout << "Saving to file" << endl;
-    saveBWToFile(frame_buffer, size_w, size_h, fpath);
-    cout << "Done" << endl;
-    cout.flush();
-}*/
 
 void Scene::rotate(float angle, float x, float y, float z)
 {
@@ -176,10 +136,10 @@ void Scene::translate(float x, float y, float z)
 
 void Scene::push_vec3(glm::vec3 const& v)
 {
-  objects_buffer[objects_buffer_i + 0] = v.x;
-  objects_buffer[objects_buffer_i + 1] = v.y;
-  objects_buffer[objects_buffer_i + 2] = v.z;
-  objects_buffer_i += 3;
+  m_objects_buffer[m_objects_float_index + 0] = v.x;
+  m_objects_buffer[m_objects_float_index + 1] = v.y;
+  m_objects_buffer[m_objects_float_index + 2] = v.z;
+  m_objects_float_index += 3;
 }
 
 void Scene::push_vertex(glm::vec3 const& v)
@@ -191,12 +151,13 @@ void Scene::push_vertex(glm::vec3 const& v)
 // Pushes the object to the objects_buffer at byte index freeOffset_r
 void Scene::push_header(uint8_t const type, Material const& material)
 {
-  uint8_t* thisObj_u = (uint8_t*)(objects_buffer + objects_buffer_i);
+  uint8_t* thisObj_u = (uint8_t*)(m_objects_buffer + m_objects_float_index);
   thisObj_u[0] = type;
   thisObj_u[1] = material.type;
-  objects_buffer_i++;
+  m_objects_float_index++;
   push_vec3(material.passive);
   push_vec3(material.active);
+  m_objects_count++;
 }
 
 __attribute__((const)) float min3(float a, float b, float c)
@@ -213,72 +174,23 @@ void Scene::triangle(Material const& material,
                      glm::vec3 const& b,
                      glm::vec3 const& c)
 {
-  glm::vec3 ab = (a + b) / 2.0f;
-  glm::vec3 ac = (a + c) / 2.0f;
-  glm::vec3 bc = (b + c) / 2.0f;
-
   glm::vec3 lower, upper;
-
-  lower = glm::vec3(
-      min3(ab.x, b.x, bc.x), min3(ab.y, b.y, bc.y), min3(ab.z, b.z, bc.z));
-  upper = glm::vec3(
-      max3(ab.x, b.x, bc.x), max3(ab.y, b.y, bc.y), max3(ab.z, b.z, bc.z));
-  AABB aabb0(lower, upper);
-  octree->insert(objects_buffer_i, aabb0);
-
-  push_header(TRIANGLE, material);
-  push_vertex(ab);
-  push_vertex(b);
-  push_vertex(bc);
-
-  lower = glm::vec3(
-      min3(ac.x, bc.x, c.x), min3(ac.y, bc.y, c.y), min3(ac.z, bc.z, c.z));
-  upper = glm::vec3(
-      max3(ac.x, bc.x, c.x), max3(ac.y, bc.y, c.y), max3(ac.z, bc.z, c.z));
-  AABB aabb1(lower, upper);
-  octree->insert(objects_buffer_i, aabb1);
-
-  push_header(TRIANGLE, material);
-  push_vertex(bc);
-  push_vertex(c);
-  push_vertex(ac);
-
-  lower = glm::vec3(
-      min3(ac.x, ab.x, bc.x), min3(ac.y, ab.y, bc.y), min3(ac.z, ab.z, bc.z));
-  upper = glm::vec3(
-      max3(ac.x, ab.x, bc.x), max3(ac.y, ab.y, bc.y), max3(ac.z, ab.z, bc.z));
-  AABB aabb2(lower, upper);
-  octree->insert(objects_buffer_i, aabb2);
-
-  push_header(TRIANGLE, material);
-  push_vertex(ac);
-  push_vertex(ab);
-  push_vertex(bc);
-
-  lower = glm::vec3(
-      min3(a.x, ab.x, ac.x), min3(a.y, ab.y, ac.y), min3(a.z, ab.z, ac.z));
-  upper = glm::vec3(
-      max3(a.x, ab.x, ac.x), max3(a.y, ab.y, ac.y), max3(a.z, ab.z, ac.z));
-  AABB aabb3(lower, upper);
-  octree->insert(objects_buffer_i, aabb3);
 
   push_header(TRIANGLE, material);
   push_vertex(a);
-  push_vertex(ab);
-  push_vertex(ac);
+  push_vertex(b);
+  push_vertex(c);
 }
 
 void Scene::sphere(Material const& material, glm::vec3 const& pos, float radius)
 {
   glm::vec3 const lower(pos - glm::vec3(radius));
   glm::vec3 const upper(pos + glm::vec3(radius));
-  AABB aabb(lower, upper);
-  octree->insert(objects_buffer_i, aabb);
 
   push_header(SPHERE, material);
   push_vertex(pos);
-  objects_buffer[objects_buffer_i] = radius;
-  objects_buffer_i++;
+  m_objects_buffer[m_objects_float_index] = radius;
+  m_objects_float_index++;
 }
 
 void Scene::quad(Material const& material,
