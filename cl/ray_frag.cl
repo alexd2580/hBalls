@@ -33,6 +33,7 @@ triangle -> 16*4 byte
 
 /**
  * Returns a vector orthogonal to a given vector in 3D space.
+ * This function was copied (01.01.2016) from github.com/svenstaro/trac0r
  * @param v The vector to find an orthogonal vector for
  * @return A vector orthogonal to the given vector
  */
@@ -60,6 +61,21 @@ float3 reflect(float3 source, float3 normal)
 /**** UTILS ****/
 /*** RANDOM ***/
 
+/**
+ * The following section:
+ *  PRNG
+ *  xorshift1024star
+ *  rand_range
+ *  uniform_sample_sphere
+ *  oriented_uniform_sample_hemisphere
+ *  sample_hemisphere
+ * was copied and adapted from svenstaro's trac0r:
+ * 01.01.2016 => github.com/svenstaro/trac0r
+ */
+
+/**
+ * Pseudo Random Number Generator
+ */
 typedef struct PRNG
 {
   ulong m_seed[16];

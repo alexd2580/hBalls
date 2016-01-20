@@ -139,7 +139,11 @@ int main(void)
     Scene scene(primitive_size);
     create_scene(scene);
 
-    /** PRNG **/
+    /**
+     * PRNG
+     * adapted from svenstaro's trac0r
+     * 01.01.2016 => github.com/svenstaro/trac0r
+     */
     unsigned long prng[17];
     for(int i = 0; i < 16; i++)
       prng[i] = (unsigned long)rand() << 32 | (unsigned long)rand();
