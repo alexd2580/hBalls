@@ -53,6 +53,19 @@ struct Camera
   float fov;
   glm::vec3 left;
 };
+
+/**
+ * data items MUST be aligned! max(type T) = 4byte
+ * The objects buffer and offsets for surfaces and lamps.
+ */
+struct ObjectsBuffer
+{
+  float* buffer;
+  unsigned int surf_float_index;
+  unsigned int lamp_float_index;
+  unsigned int surf_count;
+  unsigned int lamp_count;
+};
 /**
  * Used to define the scene in a
  */
@@ -60,24 +73,21 @@ class Scene
 {
 private:
   /**
+   * ObjectsBuffer
+   */
+  ObjectsBuffer buf;
+
+  /**
    * Matrix stack for model matrix
    */
   std::stack<glm::mat4> model_s;
 
-  /* data items MUST be aligned! max(type T) = 4byte */
-  /**
-   * The base pointer and the current offset.
-   */
-  float* m_objects_buffer;
-  unsigned int m_objects_float_index;
-  unsigned int m_objects_count;
-
-  void push_vec3(glm::vec3 const& v);
-  void push_vertex(glm::vec3 const& v);
-  void push_header(uint8_t const type, Material const& material);
+  void push_vec3(glm::vec3 const& v, unsigned int const& index);
+  void push_vertex(glm::vec3 const& v, unsigned int const& index);
+  unsigned int push_header(uint8_t const type, Material const& material);
 
 public:
-  Scene(size_t const primitive_size);
+  Scene(uint32_t primitive_size);
   ~Scene(void);
 
   /**
@@ -87,11 +97,9 @@ public:
   void clear_buffers(void); // clears the scene
 
   /**
-   * Returns the scene buffer size in bytes (the fileld part)
+   * Returns the relevant data for addressing the objects buffer.
    */
-  size_t objects_byte_size(void) const;
-  unsigned int objects_count(void) const;
-  float const* get_objects(void) const;
+  ObjectsBuffer const& get_objects(void) const;
 
   void pop_matrix(void);
   void push_matrix(void);

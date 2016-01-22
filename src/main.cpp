@@ -23,19 +23,21 @@ void push_camera(cl::CommandQueue const& queue,
                  Camera const& camera,
                  int const size_w,
                  int const size_h,
-                 unsigned int const object_count,
+                 ObjectsBuffer const& obj,
                  RemoteBuffer const& data_mem)
 {
   /**
-   * Main kernel function.
-   * general_data is an array of 17 4-byte units:
-   * fovy, aspect :: Float
-   * posx, posy, posz :: Float
-   * dirx, diry, dirz :: Float
-   * upx, upy, upz :: Float
-   * leftx, lefty, leftz :: Float
-   * size_w, size_h :: Int
-   * num_primitives :: Int
+  * Main kernel function.
+  * general_data is an array of 19 4-byte units:
+  * fovy, aspect :: Float
+  * posx, posy, posz :: Float
+  * dirx, diry, dirz :: Float
+  * upx, upy, upz :: Float
+  * leftx, lefty, leftz :: Float
+  * size_w, size_h :: UInt
+  * num_surfs :: UInt
+  * num_lamps :: UInt
+  * off_lamps :: UInt
    */
   float data[17];
   data[0] = camera.fov;
@@ -56,21 +58,20 @@ void push_camera(cl::CommandQueue const& queue,
   int* data_i = (int*)(data + 14);
   data_i[0] = size_w;
   data_i[1] = size_h;
-  data_i[2] = object_count;
+  data_i[2] = obj.surf_count;
+  data_i[3] = obj.lamp_count;
+  data_i[4] = obj.lamp_float_index;
 
   writeBufferBlocking(queue, data_mem, data);
 }
 
 void push_data(cl::CommandQueue const& queue,
-               Scene const& scene,
+               ObjectsBuffer const& obj,
                RemoteBuffer const& objects_mem)
 {
-
-  size_t size = scene.objects_byte_size();
-  (void)size;
   // TODO fix writeBuffer, so that is doesn't copy EVERYTHING
-  float const* data = scene.get_objects();
-  writeBufferBlocking(queue, objects_mem, data);
+
+  writeBufferBlocking(queue, objects_mem, obj.buffer);
 }
 
 void create_scene(Scene& scene)
@@ -110,8 +111,8 @@ int main(void)
   cout << "[Main] Entry." << endl;
 
   /** SDL **/
-  unsigned int const size_w = 640;
-  unsigned int const size_h = 480;
+  unsigned int const size_w = 500;
+  unsigned int const size_h = 500;
   uint32_t* frame_buffer =
       (uint32_t*)alloca(size_w * size_h * sizeof(uint32_t));
 
@@ -147,7 +148,7 @@ int main(void)
     prng[16] = 0;
 
     /** Buffers **/
-    RemoteBuffer /*float */ data_mem = env.allocate(17 * sizeof(float));
+    RemoteBuffer /*float */ data_mem = env.allocate(19 * sizeof(float));
     RemoteBuffer /*float */ objects_mem =
         env.allocate(primitive_size * sizeof(float));
     RemoteBuffer /*float */ octree_mem = env.allocate(1);
@@ -186,8 +187,9 @@ int main(void)
     cl::CommandQueue queue = env.create_queue();
 
     /** Push data to remote buffers **/
-    push_camera(queue, c, size_w, size_h, scene.objects_count(), data_mem);
-    push_data(queue, scene, objects_mem);
+    ObjectsBuffer const& obj = scene.get_objects();
+    push_camera(queue, c, size_w, size_h, obj, data_mem);
+    push_data(queue, obj, objects_mem);
 
     float samples = 0.0f;
     while(!SDL::die)

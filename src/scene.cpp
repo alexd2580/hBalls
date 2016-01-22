@@ -84,31 +84,30 @@ struct interleave_ // TODO what is this?
   float color;
 };
 
-Scene::Scene(size_t const primitive_size)
+Scene::Scene(uint32_t primitive_size)
 {
-  m_objects_buffer = new float[primitive_size];
-  m_objects_float_index = 0;
-  m_objects_count = 0;
+  buf.buffer = new float[primitive_size];
+  buf.surf_float_index = 0;
+  buf.lamp_float_index = primitive_size;
+  buf.surf_count = 0;
+  buf.lamp_count = 0;
+
   push_matrix();
 }
 
-Scene::~Scene(void) { delete[] m_objects_buffer; }
+Scene::~Scene(void) { delete[] buf.buffer; }
 
-void Scene::clear_buffers(void) { m_objects_float_index = 0; }
-
-__attribute__((pure)) size_t Scene::objects_byte_size(void) const
+void Scene::clear_buffers(void)
 {
-  return m_objects_float_index * sizeof(float);
+  buf.surf_float_index = 0;
+  buf.lamp_float_index = 0;
+  buf.surf_count = 0;
+  buf.lamp_count = 0;
 }
 
-__attribute__((pure)) unsigned int Scene::objects_count(void) const
+__attribute__((const)) ObjectsBuffer const& Scene::get_objects(void) const
 {
-  return m_objects_count;
-}
-
-__attribute__((pure)) float const* Scene::get_objects(void) const
-{
-  return m_objects_buffer;
+  return buf;
 }
 
 void Scene::rotate(float angle, float x, float y, float z)
@@ -135,31 +134,46 @@ void Scene::translate(float x, float y, float z)
 
 //---------------------------------------
 
-void Scene::push_vec3(glm::vec3 const& v)
+void Scene::push_vec3(glm::vec3 const& v, unsigned int const& index)
 {
-  m_objects_buffer[m_objects_float_index + 0] = v.x;
-  m_objects_buffer[m_objects_float_index + 1] = v.y;
-  m_objects_buffer[m_objects_float_index + 2] = v.z;
-  m_objects_float_index += 3;
+  buf.buffer[index + 0] = v.x;
+  buf.buffer[index + 1] = v.y;
+  buf.buffer[index + 2] = v.z;
 }
 
-void Scene::push_vertex(glm::vec3 const& v)
+void Scene::push_vertex(glm::vec3 const& v, unsigned int const& index)
 {
   glm::vec3 res = glm::vec3(model_s.top() * glm::vec4(v, 1.0f));
-  push_vec3(res);
+  push_vec3(res, index);
 }
 
-// Pushes the object to the objects_buffer at byte index freeOffset_r
-void Scene::push_header(uint8_t const type, Material const& material)
+#define HEADER_SIZE 6
+
+unsigned int Scene::push_header(uint8_t const type, Material const& material)
 {
-  uint8_t* thisObj_u = (uint8_t*)(m_objects_buffer + m_objects_float_index);
-  thisObj_u[0] = type;
-  thisObj_u[1] = material.type;
-  m_objects_buffer[m_objects_float_index + 1] = material.roughness;
-  m_objects_buffer[m_objects_float_index + 2] = material.luminescence;
-  m_objects_float_index += 3;
-  push_vec3(material.color);
-  m_objects_count++;
+  unsigned int index;
+  unsigned int const obj_size = HEADER_SIZE + 9; // max
+  if(material.luminescence < 0.00001f)           // lamp
+  {
+    buf.lamp_float_index -= obj_size;
+    buf.lamp_count++;
+    index = buf.lamp_float_index;
+  }
+  else
+  {
+    index = buf.surf_float_index;
+    buf.surf_float_index += obj_size;
+    buf.surf_count++;
+  }
+
+  uint8_t* buf_u = (uint8_t*)(buf.buffer + index);
+  buf_u[0] = type;
+  buf_u[1] = material.type;
+  buf.buffer[index + 1] = material.roughness;
+  buf.buffer[index + 2] = material.luminescence;
+  push_vec3(material.color, index + 3);
+
+  return index + 6;
 }
 
 __attribute__((const)) float min3(float a, float b, float c)
@@ -178,10 +192,10 @@ void Scene::triangle(Material const& material,
 {
   glm::vec3 lower, upper;
 
-  push_header(TRIANGLE, material);
-  push_vertex(a);
-  push_vertex(b);
-  push_vertex(c);
+  unsigned int index = push_header(TRIANGLE, material);
+  push_vertex(a, index + 0);
+  push_vertex(b, index + 3);
+  push_vertex(c, index + 6);
 }
 
 void Scene::sphere(Material const& material, glm::vec3 const& pos, float radius)
@@ -189,10 +203,9 @@ void Scene::sphere(Material const& material, glm::vec3 const& pos, float radius)
   glm::vec3 const lower(pos - glm::vec3(radius));
   glm::vec3 const upper(pos + glm::vec3(radius));
 
-  push_header(SPHERE, material);
-  push_vertex(pos);
-  m_objects_buffer[m_objects_float_index] = radius;
-  m_objects_float_index++;
+  unsigned int index = push_header(SPHERE, material);
+  push_vertex(pos, index);
+  buf.buffer[index + 3] = radius;
 }
 
 void Scene::quad(Material const& material,

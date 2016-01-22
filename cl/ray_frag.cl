@@ -280,48 +280,48 @@ void traceSphere(float3 eye_pos,
  * Lookup loop. Currently running in O(n) on a list of primitives.
  * TODO Replace by lookup structure.
  */
-global float* runTraceObjects(float3 eye_pos,
-                              float3 eye_dir, // normalized
-                              global float* objects,
-                              const int num_primitives,
-                              global float* octree, // unused
-                              float3 res[])
+void runTraceObjects(float3 eye_pos,
+                     float3 eye_dir, // normalized
+                     global float* objects,
+                     uint count,
+                     global float** closest,
+                     float* min_depth,
+                     float3 res[])
 {
   global float* object = objects;
-  global float* closest = 0;
-  uchar type = *((global uchar*)objects);
-  float min_depth = 1.0f / 0.0f;
+  uchar type = *((global uchar*)object);
 
-  for(int index = 0; index < num_primitives; index++)
+  for(int index = 0; index < count; index++)
   {
     type = *(global uchar*)object;
     switch(type)
     {
     case TRIANGLE:
-      traceTriangle(eye_pos, eye_dir, object, &closest, &min_depth, res);
+      traceTriangle(eye_pos, eye_dir, object, closest, min_depth, res);
       object += HEADER_SIZE + TRIANGLE_SIZE;
       break;
     case SPHERE:
-      traceSphere(eye_pos, eye_dir, object, &closest, &min_depth, res);
+      traceSphere(eye_pos, eye_dir, object, closest, min_depth, res);
       object += HEADER_SIZE + SPHERE_SIZE;
       break;
     default:
       break;
     }
   }
-  return closest;
 }
 
 /**
  * Main kernel function.
- * general_data is an array of 17 4-byte units:
+ * general_data is an array of 19 4-byte units:
  * fovy, aspect :: Float
  * posx, posy, posz :: Float
  * dirx, diry, dirz :: Float
  * upx, upy, upz :: Float
  * leftx, lefty, leftz :: Float
- * size_w, size_h :: Int
- * num_primitives :: Int
+ * size_w, size_h :: UInt
+ * num_surfs :: UInt
+ * num_lamps :: UInt
+ * off_lamps :: UInt
  */
 kernel void trace(global void* general_data,
                   global float* objects,
@@ -343,7 +343,10 @@ kernel void trace(global void* general_data,
   const float3 eye_left = (float3){data_f[11], data_f[12], data_f[13]};
   const int size_w = data_i[14];
   const int size_h = data_i[15];
-  const int num_primitives = data_i[16];
+
+  uint surf_count = data_i[16];
+  uint lamp_count = data_i[17];
+  uint lamp_off = data_i[18];
 
   /** Pixel coordinates **/
   const int pos_x = get_global_id(0);
@@ -377,10 +380,19 @@ kernel void trace(global void* general_data,
 
   const uint max_bounces = 5;
   global float* closest = 0;
+  float min_depth;
   for(uint itr = 0; itr < max_bounces; itr++)
   {
-    closest =
-        runTraceObjects(eye_pos, eye_dir, objects, num_primitives, octree, res);
+    min_depth = 1.0f / 0.0f;
+    runTraceObjects(
+        eye_pos, eye_dir, objects, surf_count, &closest, &min_depth, res);
+    runTraceObjects(eye_pos,
+                    eye_dir,
+                    objects + lamp_off,
+                    lamp_count,
+                    &closest,
+                    &min_depth,
+                    res);
     if(closest == 0)
       break; // nothing hit
     material = ((global uchar*)closest)[1];
