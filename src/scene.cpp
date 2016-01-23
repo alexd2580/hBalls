@@ -153,7 +153,7 @@ unsigned int Scene::push_header(uint8_t const type, Material const& material)
 {
   unsigned int index;
   unsigned int const obj_size = HEADER_SIZE + 9; // max
-  if(material.luminescence < 0.00001f)           // lamp
+  if(material.luminescence > 0.00001f)           // lamp
   {
     buf.lamp_float_index -= obj_size;
     buf.lamp_count++;

@@ -111,8 +111,8 @@ int main(void)
   cout << "[Main] Entry." << endl;
 
   /** SDL **/
-  unsigned int const size_w = 500;
-  unsigned int const size_h = 500;
+  unsigned int const size_w = 10;
+  unsigned int const size_h = 10;
   uint32_t* frame_buffer =
       (uint32_t*)alloca(size_w * size_h * sizeof(uint32_t));
 
@@ -125,7 +125,7 @@ int main(void)
   try
   {
     /** OpenCL **/
-    Environment env;
+    Environment env(0, CL_DEVICE_TYPE_ALL);
 
     /** Kernel **/
     string tracer("./cl/ray_frag.cl");

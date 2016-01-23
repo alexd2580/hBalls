@@ -37,6 +37,52 @@ sizeof(Triengle) = (6+9) * 4 byte
 /***  UTIL  ***/
 
 /**
+ * Represents a ray in 3D space.
+ */
+typedef struct Ray
+{
+  /* Origin */
+  float3 pos;
+  /**
+   * Direction. Make sure that this vector is normalized.
+   */
+  float3 dir;
+} Ray;
+
+typedef struct Intersection
+{
+  /** These parameters are set by the trace functions **/
+  /* Pointer to the global object definition */
+  global float* object;
+  /* Position */
+  float3 pos;
+  /* Normal */
+  float3 normal;
+  /* Distance */
+  float dist;
+} Intersection;
+
+typedef struct IntersectionTest
+{
+  /** These parameters are set by the trace functions **/
+  /* Pointer to the global object definition */
+  global float* object[100];
+  /* Position */
+  float3 pos[100];
+  /* Normal */
+  float3 normal[100];
+  /* Distance */
+  float dist[100];
+} IntersectionTest;
+
+/*
+  uchar material;
+  float3 color;
+  float luminescence;
+  float roughness;
+} Intersection;*/
+
+/**
  * Returns a vector orthogonal to a given vector in 3D space.
  * This function was copied (01.01.2016) from github.com/svenstaro/trac0r
  * @param v The vector to find an orthogonal vector for
@@ -174,12 +220,9 @@ sample_hemisphere(global PRNG* prng, float3 dir, float power, float angle)
 /**
  * https://en.wikipedia.org/wiki/M%C3%B6ller%E2%80%93Trumbore_intersection_algorithm
  */
-void traceTriangle(float3 eye_pos,
-                   float3 eye_dir, // normalized
+void test_triangle(const Ray ray,
                    global float* triangle_,
-                   global float** closest,
-                   float* min_depth,
-                   float3 res[])
+                   Intersection* closest)
 {
   global float* triangle = triangle_ + HEADER_SIZE;
   float3 a = (float3){triangle[0], triangle[1], triangle[2]};
@@ -190,7 +233,7 @@ void traceTriangle(float3 eye_pos,
   float3 atoc = c - a;
 
   // Begin calculating determinant - also used to calculate u parameter
-  float3 P = cross(eye_dir, atoc);
+  float3 P = cross(ray.dir, atoc);
   // if determinant is near zero, ray lies in plane of triangle
   float det = dot(atob, P);
 
@@ -199,7 +242,7 @@ void traceTriangle(float3 eye_pos,
 
   float inv_det = 1.0f / det;
   // calculate distance from V1 to ray origin
-  float3 T = eye_pos - a;
+  float3 T = ray.pos - a;
 
   // Calculate u parameter and test bound
   float u = dot(T, P) * inv_det;
@@ -211,21 +254,19 @@ void traceTriangle(float3 eye_pos,
   float3 Q = cross(T, atob);
 
   // Calculate v parameter and test bound
-  float v = dot(eye_dir, Q) * inv_det;
+  float v = dot(ray.dir, Q) * inv_det;
   // The intersection lies outside of the triangle
   if(v < 0.0f || u + v > 1.0f)
     return;
 
   float dist = dot(atoc, Q) * inv_det;
-  if(dist > 0.00001f && dist < *min_depth)
+  if(dist > 0.00001f && dist < closest->dist)
   {
-    res[0] = eye_pos + dist * eye_dir;
-    res[1] = normalize(cross(atob, atoc));
-    *min_depth = dist;
-    *closest = triangle_;
-    return;
+    closest->pos = ray.pos + dist * ray.dir;
+    closest->normal = normalize(cross(atob, atoc));
+    closest->dist = dist;
+    closest->object = triangle_;
   }
-  return;
 }
 
 /**
@@ -234,20 +275,15 @@ void traceTriangle(float3 eye_pos,
  * and updates min_depth and closest, if the distance from eye_pos
  * to the hit point is smaller than *min_depth.
  */
-void traceSphere(float3 eye_pos,
-                 float3 eye_dir, // normalized
-                 global float* sphere_,
-                 global float** closest,
-                 float* min_depth,
-                 float3 res[])
+void test_sphere(const Ray ray, global float* sphere_, Intersection* closest)
 {
   global float* sphere = sphere_ + HEADER_SIZE;
   float3 center = (float3){sphere[0], sphere[1], sphere[2]};
   float radius = sphere[3];
 
-  float3 eyeToSphere = center - eye_pos;
+  float3 eyeToSphere = center - ray.pos;
   /* View axis distance */
-  float dX1 = dot(eye_dir, eyeToSphere);
+  float dX1 = dot(ray.dir, eyeToSphere);
   if(dX1 <= 0)
     return;
 
@@ -265,49 +301,94 @@ void traceSphere(float3 eye_pos,
   /* Now dX1 is the distance to the intersection */
   dX1 -= sqrt(oX2);
   /* Intersection is not visible */
-  if(dX1 > *min_depth)
+  if(dX1 > closest->dist)
     return;
 
-  *min_depth = dX1;
-  *closest = sphere_;
-  res[0] = eye_pos + dX1 * eye_dir;
-  res[1] = normalize(res[0] - center);
-
-  return;
+  closest->object = sphere_;
+  closest->dist = dX1;
+  closest->pos = ray.pos + dX1 * ray.dir;
+  float inv_rad = 1.0f / radius;
+  closest->normal = (closest->pos - center) * inv_rad;
 }
 
 /**
  * Lookup loop. Currently running in O(n) on a list of primitives.
  * TODO Replace by lookup structure.
  */
-void runTraceObjects(float3 eye_pos,
-                     float3 eye_dir, // normalized
-                     global float* objects,
-                     uint count,
-                     global float** closest,
-                     float* min_depth,
-                     float3 res[])
+void run_trace(const Ray ray,
+               global float* objects,
+               uint count,
+               Intersection* closest)
 {
   global float* object = objects;
   uchar type = *((global uchar*)object);
-
   for(int index = 0; index < count; index++)
   {
     type = *(global uchar*)object;
     switch(type)
     {
     case TRIANGLE:
-      traceTriangle(eye_pos, eye_dir, object, closest, min_depth, res);
+      test_triangle(ray, object, closest);
       object += HEADER_SIZE + TRIANGLE_SIZE;
       break;
     case SPHERE:
-      traceSphere(eye_pos, eye_dir, object, closest, min_depth, res);
-      object += HEADER_SIZE + SPHERE_SIZE;
+      test_sphere(ray, object, closest);
+      object += HEADER_SIZE + TRIANGLE_SIZE; // Max of both
       break;
     default:
       break;
     }
   }
+}
+
+/*inline void read_header(Intersection* const i)
+{
+  global float* obj = i->object;
+  i->material = ((global uchar*)obj)[1];
+  i->roughness = obj[1];
+  i->luminescence = obj[2];
+  i->color = (float3){obj[3], obj[4], obj[5]};
+}*/
+
+Intersection gen_random_point(global PRNG* prng, global float* obj, uint count)
+{
+  uint rand = xorshift1024star(prng) % count;
+  obj += rand * (HEADER_SIZE + TRIANGLE_SIZE);
+
+  uchar type = ((global uchar*)obj)[0];
+  Intersection i;
+  i.object = obj;
+  // read_header(&i);
+
+  switch(type)
+  {
+  case SPHERE:
+  {
+    i.normal = uniform_sample_sphere(prng);
+    float radius = obj[9];
+    i.pos = (float3){obj[6], obj[7], obj[8]} + i.normal * radius;
+  }
+  break;
+  case TRIANGLE:
+  {
+    float3 a = (float3){obj[6], obj[7], obj[8]};
+    float3 to_b = (float3){obj[9], obj[10], obj[11]} - a;
+    float3 to_c = (float3){obj[12], obj[13], obj[14]} - a;
+    float r1 = rand_range(prng, 0.0f, 1.0f);
+    float r2 = rand_range(prng, 0.0f, 0.5f);
+    if(r1 + r2 > 1.0f)
+    {
+      r1 = 1.0f - r1;
+      r2 = 1.0f - r2;
+    }
+    i.pos = a + r1 * to_b + r2 * to_c;
+    i.normal = normalize(cross(to_b, to_c));
+  }
+  break;
+  default:
+    break;
+  }
+  return i;
 }
 
 /**
@@ -325,7 +406,7 @@ void runTraceObjects(float3 eye_pos,
  */
 kernel void trace(global void* general_data,
                   global float* objects,
-                  global float* octree, // EMPTY!! NOT USED!!
+                  global float* UNUSED,
                   global uint* frame_c,
                   global float4* frame_f,
                   global float* samples,
@@ -363,12 +444,22 @@ kernel void trace(global void* general_data,
   eye_dir += (rel_y * max_u * eye_up - rel_x * max_r * eye_left);
   eye_dir = normalize(eye_dir); // TODO FIX THIS!!
   eye_dir = sample_hemisphere(prng, eye_dir, 0.0f, 0.001f);
-  float3 frag = (float3){0.0f, 0.0f, 0.0f};
-  float3 res[2];
+
+#define MAX_BOUNCES 1
+  /* First bounce point is NOT the eye itself */
+  Intersection eye_intersections[1];
+
+  IntersectionTest asd;
+  asd.object[0] = 0;
+
+  /* First bounce point is the random lamp-point */
+  Intersection lamp_intersections[MAX_BOUNCES];
+  lamp_intersections[0] =
+      gen_random_point(prng, objects + lamp_off, lamp_count);
 
   //--------------------------------------------------------------------------//
 
-  float3 pos;
+  /*float3 pos;
   float3 normal;
 
   uchar material;
@@ -378,50 +469,122 @@ kernel void trace(global void* general_data,
 
   float3 brdf = (float3){1.0f, 1.0f, 1.0f};
 
-  const uint max_bounces = 5;
   global float* closest = 0;
   float min_depth;
-  for(uint itr = 0; itr < max_bounces; itr++)
-  {
-    min_depth = 1.0f / 0.0f;
-    runTraceObjects(
-        eye_pos, eye_dir, objects, surf_count, &closest, &min_depth, res);
-    runTraceObjects(eye_pos,
-                    eye_dir,
-                    objects + lamp_off,
-                    lamp_count,
-                    &closest,
-                    &min_depth,
-                    res);
-    if(closest == 0)
-      break; // nothing hit
-    material = ((global uchar*)closest)[1];
-    roughness = closest[1];
-    luminescence = closest[2];
-    color = (float3){closest[3], closest[4], closest[5]};
-    pos = res[0];
-    normal = res[1];
-    frag += color * luminescence * brdf;
 
-    ulong guess = xorshift1024star(prng) % max_bounces;
-    if(guess <= itr)
-      break;
+  aterial = ((global uchar*)closest)[1];
+  roughness = closest[1];
+  luminescence = closest[2];
+  color = (float3){closest[3], closest[4], closest[5]};
+  pos = res[0];
+  normal = res[1];
+  frag += color * luminescence * brdf;
+
+  switch(material)
+  {
+  case DIFFUSE:
+    eye_pos = pos;
+    eye_dir = oriented_uniform_sample_hemisphere(prng, normal);
+    brdf *= 2.0f * color * dot(normal, eye_dir);
+    break;
+  case MIRROR:
+    eye_pos = pos;
+    eye_dir = reflect(eye_dir, normal);
+    break;
+  case METALLIC:
+    eye_pos = pos;
+    eye_dir = reflect(eye_dir, normal);
+    eye_dir = sample_hemisphere(prng, eye_dir, 1.f, 1.f);
+    break;*/
+  /*case GLASS:
+        break;
+    default:
+        break;*/ /*
+}
+
+*/
+
+  Ray ray;
+  Intersection* intersection;
+  global float* object;
+  uint material;
+  float roughness;
+
+  /* Compute eye bounces */
+  ray.pos = eye_pos;
+  ray.dir = eye_dir;
+
+  uint eye_bounces = 0;
+  while(eye_bounces < MAX_BOUNCES)
+  {
+    intersection = eye_intersections + eye_bounces;
+    intersection->object = 0;
+    intersection->dist = 1.0f / 0.0f;
+    run_trace(ray, objects, surf_count, intersection);
+    run_trace(ray, objects + lamp_off, lamp_count, intersection);
+    object = intersection->object;
+    if(object == 0)
+      break; // nothing hit
+    eye_bounces++;
+
+    material = ((global uchar*)object)[1];
+    roughness = object[1];
+    ray.pos = intersection->pos;
 
     switch(material)
     {
     case DIFFUSE:
-      eye_pos = pos;
-      eye_dir = oriented_uniform_sample_hemisphere(prng, normal);
-      brdf *= 2.0f * color * dot(normal, eye_dir);
+      ray.dir = oriented_uniform_sample_hemisphere(prng, intersection->normal);
       break;
     case MIRROR:
-      eye_pos = pos;
-      eye_dir = reflect(eye_dir, normal);
+      ray.dir = reflect(ray.dir, intersection->normal);
       break;
     case METALLIC:
-      eye_pos = pos;
-      eye_dir = reflect(eye_dir, normal);
-      eye_dir = sample_hemisphere(prng, eye_dir, 1.f, 1.f);
+      ray.dir = reflect(ray.dir, intersection->normal);
+      ray.dir = sample_hemisphere(prng, ray.dir, 1.0f, 1.0f);
+      break;
+    default:
+      break;
+      /*case GLASS:
+          break;
+      default:
+          break;*/
+    }
+  }
+
+  /* Compute light bounces */
+  ray.pos = lamp_intersections[0].pos;
+  ray.dir =
+      oriented_uniform_sample_hemisphere(prng, lamp_intersections[0].normal);
+
+  uint lamp_bounces = 1;
+  while(lamp_bounces < MAX_BOUNCES)
+  {
+    intersection = lamp_intersections + lamp_bounces;
+    intersection->object = 0;
+    intersection->dist = 1.0f / 0.0f;
+    run_trace(ray, objects, surf_count, intersection);
+    run_trace(ray, objects + lamp_off, lamp_count, intersection);
+    object = intersection->object;
+    if(object == 0)
+      break; // nothing hit
+    lamp_bounces++;
+
+    material = ((global uchar*)object)[1];
+    roughness = object[1];
+    ray.pos = intersection->pos;
+
+    switch(material)
+    {
+    case DIFFUSE:
+      ray.dir = oriented_uniform_sample_hemisphere(prng, intersection->normal);
+      break;
+    case MIRROR:
+      ray.dir = reflect(ray.dir, intersection->normal);
+      break;
+    case METALLIC:
+      ray.dir = reflect(ray.dir, intersection->normal);
+      ray.dir = sample_hemisphere(prng, ray.dir, 1.f, 1.f);
       break;
       /*case GLASS:
           break;
@@ -432,6 +595,7 @@ kernel void trace(global void* general_data,
 
   //--------------------------------------------------------------------------//
 
+  float3 frag = (float3){1.0f, 0.0f, 0.0f};
   float4 total = frame_f[id] + (float4){frag.x, frag.y, frag.z, 0.0};
   frame_f[id] = total;
 
@@ -439,6 +603,5 @@ kernel void trace(global void* general_data,
   uchar frag_g = (uchar)clamp(255.1f * total.y / *samples, 0.0f, 255.0f);
   uchar frag_b = (uchar)clamp(255.1f * total.z / *samples, 0.0f, 255.0f);
   uint frag_i = frag_r << 24 | frag_g << 16 | frag_b << 8 | 255;
-
   frame_c[id] = frag_i;
 }

@@ -55,7 +55,7 @@ void readBufferBlocking(cl::CommandQueue const& queue,
 class Environment
 {
 public:
-  Environment(void);
+  Environment(unsigned int platform_num, cl_device_type const dev_type);
   virtual ~Environment(void){};
 
   cl::Platform m_platform;

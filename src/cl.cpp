@@ -117,7 +117,7 @@ void OpenCLException::print(void)
 /******************************************************************************/
 /******************************************************************************/
 
-Environment::Environment(void)
+Environment::Environment(unsigned int platform_num, cl_device_type dev_type)
 {
   cout << "[OpenCL] Initializing." << endl;
 
@@ -139,8 +139,8 @@ Environment::Environment(void)
   }
 
   // SELECT CPU VS GPU HERE!!!!
-  m_platform = platforms[0];
-  list_devices(m_devices, m_platform, CL_DEVICE_TYPE_GPU);
+  m_platform = platforms[platform_num];
+  list_devices(m_devices, m_platform, dev_type);
 
   m_context = cl::Context(m_devices, nullptr, nullptr, nullptr, &error);
   if(error != CL_SUCCESS)
