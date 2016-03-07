@@ -1,22 +1,19 @@
-#include <iostream>
+#include <cmath>
 #include <cstdlib>
 #include <cstring>
-#include <cmath>
-#include <string>
-#include <stack>
-#include <vector>
 #include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/matrix_access.hpp>
-
-#define __USE_BSD // to get usleep
-#include <unistd.h>
+#include <glm/gtc/matrix_transform.hpp>
+#include <iostream>
+#include <stack>
+#include <string>
+#include <vector>
 
 #include "scene.hpp"
 
 using namespace std;
 
-Material::Material(uint8_t type_,
+Material::Material(SurfaceType type_,
                    float roughness_,
                    float luminescence_,
                    glm::vec3 const& color_)
@@ -24,6 +21,24 @@ Material::Material(uint8_t type_,
       color(color_)
 {
 }
+
+TriangleBuffer::TriangleBuffer(size_t const float_count)
+{
+  buffer = new float[float_count];
+  index = 0;
+}
+
+TriangleBuffer::~TriangleBuffer(void) { delete[] buffer; }
+
+void TriangleBuffer::push_vec3(glm::vec3 const& v)
+{
+  buffer[index + 0] = v.x;
+  buffer[index + 1] = v.y;
+  buffer[index + 2] = v.z;
+  index += 3;
+}
+
+void TriangleBuffer::clear(void) { index = 0; }
 
 /**
  * Pop a model matrix
@@ -77,38 +92,22 @@ __attribute__((pure)) glm::mat4 Scene::get_matrix(void)
  * color -> a float color value [0..1]
  */
 
-typedef struct interleave_ interleave;
-struct interleave_ // TODO what is this?
+Scene::Scene(size_t const surf_count, size_t const lamp_count)
+    : m_surf_buffer(surf_count * triangle_size),
+      m_lamp_buffer(lamp_count * triangle_size)
 {
-  glm::vec3 pos;
-  float color;
-};
-
-Scene::Scene(size_t const primitive_size)
-{
-  m_objects_buffer = new float[primitive_size];
-  m_objects_float_index = 0;
-  m_objects_count = 0;
+  m_surf_count = 0;
+  m_lamp_count = 0;
   push_matrix();
 }
 
-Scene::~Scene(void) { delete[] m_objects_buffer; }
-
-void Scene::clear_buffers(void) { m_objects_float_index = 0; }
-
-__attribute__((pure)) size_t Scene::objects_byte_size(void) const
+void Scene::clear_buffers(void)
 {
-  return m_objects_float_index * sizeof(float);
-}
+  m_surf_buffer.clear();
+  m_lamp_buffer.clear();
 
-__attribute__((pure)) unsigned int Scene::objects_count(void) const
-{
-  return m_objects_count;
-}
-
-__attribute__((pure)) float const* Scene::get_objects(void) const
-{
-  return m_objects_buffer;
+  m_surf_count = 0;
+  m_lamp_count = 0;
 }
 
 void Scene::rotate(float angle, float x, float y, float z)
@@ -135,31 +134,10 @@ void Scene::translate(float x, float y, float z)
 
 //---------------------------------------
 
-void Scene::push_vec3(glm::vec3 const& v)
-{
-  m_objects_buffer[m_objects_float_index + 0] = v.x;
-  m_objects_buffer[m_objects_float_index + 1] = v.y;
-  m_objects_buffer[m_objects_float_index + 2] = v.z;
-  m_objects_float_index += 3;
-}
-
-void Scene::push_vertex(glm::vec3 const& v)
+void Scene::push_vertex(TriangleBuffer& buf, glm::vec3 const& v)
 {
   glm::vec3 res = glm::vec3(model_s.top() * glm::vec4(v, 1.0f));
-  push_vec3(res);
-}
-
-// Pushes the object to the objects_buffer at byte index freeOffset_r
-void Scene::push_header(uint8_t const type, Material const& material)
-{
-  uint8_t* thisObj_u = (uint8_t*)(m_objects_buffer + m_objects_float_index);
-  thisObj_u[0] = type;
-  thisObj_u[1] = material.type;
-  m_objects_buffer[m_objects_float_index + 1] = material.roughness;
-  m_objects_buffer[m_objects_float_index + 2] = material.luminescence;
-  m_objects_float_index += 3;
-  push_vec3(material.color);
-  m_objects_count++;
+  buf.push_vec3(res);
 }
 
 __attribute__((const)) float min3(float a, float b, float c)
@@ -176,23 +154,22 @@ void Scene::triangle(Material const& material,
                      glm::vec3 const& b,
                      glm::vec3 const& c)
 {
-  glm::vec3 lower, upper;
+  bool is_lamp = material.luminescence > 0.00001f;
+  TriangleBuffer& buf = is_lamp ? m_lamp_buffer : m_surf_buffer;
+  unsigned int& count = is_lamp ? m_lamp_count : m_surf_count;
 
-  push_header(TRIANGLE, material);
-  push_vertex(a);
-  push_vertex(b);
-  push_vertex(c);
-}
+  uint8_t* buffer_u = (uint8_t*)(buf.buffer + buf.index);
+  buffer_u[0] = (uint8_t)material.type;
+  buf.buffer[buf.index + 1] = material.roughness;
+  buf.buffer[buf.index + 2] = material.luminescence;
+  buf.index += 3;
+  buf.push_vec3(material.color);
 
-void Scene::sphere(Material const& material, glm::vec3 const& pos, float radius)
-{
-  glm::vec3 const lower(pos - glm::vec3(radius));
-  glm::vec3 const upper(pos + glm::vec3(radius));
+  push_vertex(buf, a);
+  push_vertex(buf, b);
+  push_vertex(buf, c);
 
-  push_header(SPHERE, material);
-  push_vertex(pos);
-  m_objects_buffer[m_objects_float_index] = radius;
-  m_objects_float_index++;
+  count++;
 }
 
 void Scene::quad(Material const& material,

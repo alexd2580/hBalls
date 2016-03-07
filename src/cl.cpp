@@ -1,8 +1,8 @@
 #include "cl.hpp"
 
-#include <iostream>
 #include <cstdlib>
 #include <fstream>
+#include <iostream>
 
 using namespace std;
 
@@ -140,7 +140,7 @@ Environment::Environment(void)
 
   // SELECT CPU VS GPU HERE!!!!
   m_platform = platforms[0];
-  list_devices(m_devices, m_platform, CL_DEVICE_TYPE_GPU);
+  list_devices(m_devices, m_platform, CL_DEVICE_TYPE_ALL);
 
   m_context = cl::Context(m_devices, nullptr, nullptr, nullptr, &error);
   if(error != CL_SUCCESS)

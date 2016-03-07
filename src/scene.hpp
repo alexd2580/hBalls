@@ -1,49 +1,34 @@
 #ifndef __RAYCG__H__
 #define __RAYCG__H__
 
-#include <glm/glm.hpp>
 #include <cstdint>
+#include <glm/glm.hpp>
 #include <stack>
 
-/** PRIMITIVE TYPE **/
-#define TRIANGLE ((uint8_t)1)
-#define SPHERE ((uint8_t)2)
-
-/** SURFACE TYPE **/
-#define DIFFUSE ((uint8_t)1)
-#define METALLIC ((uint8_t)2)
-#define MIRROR ((uint8_t)3)
-#define GLASS ((uint8_t)4)
-
 /**
-## HEADER ##
-type            :: Uint8
-material        :: Uint8
-__padding__     :: Uint16
-roughness       :: Float
--- 0 -> mirror-like; 1 -> diffuse;
-luminescence    :: Float
--- values can (and for lamps they should) be greater than 1
-color           :: Float3
-
-## BODY ##
-payload     :: Data
-
-sizeof(Sphere) = (6+4) * 4 byte
-sizeof(Triengle) = (6+9) * 4 byte
-**/
+ * Type of the surface.
+ */
+enum class SurfaceType : uint8_t
+{
+  diffuse = 1,
+  metallic = 2,
+  mirror = 3,
+  glass = 4
+};
 
 struct Material
 {
-  Material(uint8_t type,
+  Material(SurfaceType type,
            float roughness,
            float luminescence,
            glm::vec3 const& color);
-  uint8_t const type;
+  SurfaceType const type;
   float const roughness;
   float const luminescence;
   glm::vec3 const color;
 };
+
+static const unsigned int triangle_size = 3 * 3 + 3 + 1 + 1 + 1;
 
 struct Camera
 {
@@ -53,45 +38,47 @@ struct Camera
   float fov;
   glm::vec3 left;
 };
-/**
- * Used to define the scene in a
- */
+
+struct TriangleBuffer
+{
+  float* buffer;
+  unsigned int index;
+
+  TriangleBuffer(size_t const float_count);
+  ~TriangleBuffer(void);
+
+  void push_vec3(glm::vec3 const& v);
+  void clear(void);
+};
+
 class Scene
 {
 private:
   /**
-   * Matrix stack for model matrix
+   * Matrix stack for model matrix.
    */
   std::stack<glm::mat4> model_s;
 
-  /* data items MUST be aligned! max(type T) = 4byte */
-  /**
-   * The base pointer and the current offset.
-   */
-  float* m_objects_buffer;
-  unsigned int m_objects_float_index;
-  unsigned int m_objects_count;
+  void push_vertex(TriangleBuffer& buf, glm::vec3 const& v);
 
-  void push_vec3(glm::vec3 const& v);
-  void push_vertex(glm::vec3 const& v);
-  void push_header(uint8_t const type, Material const& material);
+  unsigned int m_surf_count;
+  unsigned int m_lamp_count;
 
 public:
-  Scene(size_t const primitive_size);
-  ~Scene(void);
+  /* data items MUST be aligned! max(type T) = 4byte */
+  /**
+   * The base pointers and their current offsets.
+   */
+  TriangleBuffer m_surf_buffer;
+  TriangleBuffer m_lamp_buffer;
+
+  Scene(size_t const surf_count, size_t const lamp_count);
+  virtual ~Scene(void) = default;
 
   /**
    * Drop the current scene definition.
-   * Reinitializes the octree with its current aabb
    */
-  void clear_buffers(void); // clears the scene
-
-  /**
-   * Returns the scene buffer size in bytes (the fileld part)
-   */
-  size_t objects_byte_size(void) const;
-  unsigned int objects_count(void) const;
-  float const* get_objects(void) const;
+  void clear_buffers(void);
 
   void pop_matrix(void);
   void push_matrix(void);
@@ -114,8 +101,6 @@ public:
                 glm::vec3 const& a,
                 glm::vec3 const& b,
                 glm::vec3 const& c);
-
-  void sphere(Material const& material, glm::vec3 const& pos, float r);
 
   void quad(Material const& material,
             glm::vec3 const& a,

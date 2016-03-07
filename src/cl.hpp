@@ -4,7 +4,7 @@
 #include <CL/cl.hpp>
 #include <string>
 
-// gcc -std=c99 openCLTest.c -o openCLTest -lOpenCL
+// -lOpenCL
 
 /*
 by remote i mean the GPU/CPU-internal memory
@@ -56,7 +56,7 @@ class Environment
 {
 public:
   Environment(void);
-  virtual ~Environment(void){};
+  virtual ~Environment(void) = default;
 
   cl::Platform m_platform;
   std::vector<cl::Device> m_devices;
@@ -94,7 +94,7 @@ public:
    * @param mname - Name of the main function
    */
   Kernel(std::string const& fpath, std::string const& mname);
-  virtual ~Kernel(void){};
+  virtual ~Kernel(void) = default;
 
   /**
    * Loads the program and compiles it to a kernel

@@ -1,20 +1,15 @@
-#include <iostream>
 #include <cmath>
 #include <glm/glm.hpp>
 #include <glm/gtc/constants.hpp>
+#include <iostream>
 #include <string>
 
 #define __USE_BSD // to get usleep
 #include <unistd.h>
 
-/*struct timespec abstime;
-clock_gettime(CLOCK_REALTIME, &abstime);
-abstime.tv_sec += cooldown;
-pthread_cond_timedwait(&notifier, &mutex, &abstime);*/
-
+#include "cl.hpp"
 #include "scene_helper.hpp"
 #include "sdl.hpp"
-#include "cl.hpp"
 
 using namespace std;
 using namespace OpenCL;
@@ -63,29 +58,29 @@ void push_camera(cl::CommandQueue const& queue,
 
 void push_data(cl::CommandQueue const& queue,
                Scene const& scene,
-               RemoteBuffer const& objects_mem)
+               RemoteBuffer const& surfs_mem,
+               RemoteBuffer const& lamps_mem)
 {
-
-  size_t size = scene.objects_byte_size();
+  size_t size = scene.m_surf_buffer.index * sizeof(float);
   (void)size;
   // TODO fix writeBuffer, so that is doesn't copy EVERYTHING
-  float const* data = scene.get_objects();
-  writeBufferBlocking(queue, objects_mem, data);
+  writeBufferBlocking(queue, surfs_mem, scene.m_surf_buffer.buffer);
+  writeBufferBlocking(queue, lamps_mem, scene.m_lamp_buffer.buffer);
 }
 
 void create_scene(Scene& scene)
 {
   cout << "[Main] Queueing models." << endl;
 
-  Material const red(DIFFUSE, 1.0f, 0.0f, glm::vec3(1.0f, 0.0f, 0.0f));
-  Material const green(DIFFUSE, 1.0f, 0.0f, glm::vec3(0.0f, 1.0f, 0.0f));
-  Material const blue(DIFFUSE, 1.0f, 0.0f, glm::vec3(0.0f, 0.0f, 1.0f));
+  Material const red(SurfaceType::diffuse, 1.0f, 0.0f, {1.0f, 0.0f, 0.0f});
+  Material const green(SurfaceType::diffuse, 1.0f, 0.0f, {0.0f, 1.0f, 0.0f});
+  Material const blue(SurfaceType::diffuse, 1.0f, 0.0f, {0.0f, 0.0f, 1.0f});
 
-  Material const mirror(MIRROR, 0.0f, 0.0f, glm::vec3(1.0f));
-  Material const metal(METALLIC, 0.2f, 0.0f, glm::vec3(1.0f));
-  Material const lamp(DIFFUSE, 0.0f, 30.0f, glm::vec3(1.0f));
+  Material const mirror(SurfaceType::mirror, 0.0f, 0.0f, glm::vec3(1.0f));
+  Material const metal(SurfaceType::metallic, 0.2f, 0.0f, glm::vec3(1.0f));
+  Material const lamp(SurfaceType::diffuse, 0.0f, 30.0f, glm::vec3(1.0f));
 
-  Material const white(DIFFUSE, 1.0f, 0.0f, glm::vec3(1.0f));
+  Material const white(SurfaceType::diffuse, 1.0f, 0.0f, glm::vec3(1.0f));
 
   scene.push_matrix();
   scene.translate(1.5f, 1.5f, -1.5f);
@@ -127,13 +122,14 @@ int main(void)
     Environment env;
 
     /** Kernel **/
-    string tracer("./cl/ray_frag.cl");
+    string tracer("./cl/ray_frag2.cl");
     string tracer_main("trace");
     OpenCL::Kernel path_tracer(tracer, tracer_main);
 
     /** Scene **/
-    size_t const primitive_size = 500 * 16;
-    Scene scene(primitive_size);
+    size_t const lamp_count = 30;
+    size_t const surf_count = 150;
+    Scene scene(surf_count, lamp_count);
     create_scene(scene);
 
     /**
@@ -148,9 +144,10 @@ int main(void)
 
     /** Buffers **/
     RemoteBuffer /*float */ data_mem = env.allocate(17 * sizeof(float));
-    RemoteBuffer /*float */ objects_mem =
-        env.allocate(primitive_size * sizeof(float));
-    RemoteBuffer /*float */ octree_mem = env.allocate(1);
+    RemoteBuffer /*float */ surf_mem =
+        env.allocate(surf_count * triangle_size * sizeof(float));
+    RemoteBuffer /*float */ lamp_mem =
+        env.allocate(lamp_count * triangle_size * sizeof(float));
     RemoteBuffer /*char4 */ frame_c_mem =
         env.allocate(size_h * size_w * sizeof(uint32_t));
     RemoteBuffer /*float4*/ frame_f_mem =
@@ -162,8 +159,8 @@ int main(void)
     /** Prepare Kernel **/
     path_tracer.make(env);
     path_tracer.set_argument(0, data_mem);
-    path_tracer.set_argument(1, objects_mem);
-    path_tracer.set_argument(2, octree_mem);
+    path_tracer.set_argument(1, surf_mem);
+    path_tracer.set_argument(2, lamp_mem);
     path_tracer.set_argument(3, frame_c_mem);
     path_tracer.set_argument(4, frame_f_mem);
     path_tracer.set_argument(5, samples_mem);

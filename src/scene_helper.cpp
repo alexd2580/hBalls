@@ -44,7 +44,8 @@ float depth = 0.07f;
 float offset = 0.09f;
 float footsize = 0.20f;
 
-Material black_metal(METALLIC, 0.5f, 0.0f, glm::vec3(0.0f, 0.0f, 0.0f));
+Material
+    black_metal(SurfaceType::metallic, 0.5f, 0.0f, glm::vec3(0.0f, 0.0f, 0.0f));
 
 void display(Scene& scene)
 {
@@ -70,7 +71,8 @@ void render(Scene& scene)
 namespace Table
 {
 // center is front bottom left corner
-Material light_green(DIFFUSE, 1.0f, 0.0f, glm::vec3(0.6f, 1.0f, 0.6f));
+Material
+    light_green(SurfaceType::diffuse, 1.0f, 0.0f, glm::vec3(0.6f, 1.0f, 0.6f));
 
 void tableTop(Scene& scene)
 {
