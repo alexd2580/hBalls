@@ -137,34 +137,31 @@ int main(void)
      * adapted from svenstaro's trac0r
      * 01.01.2016 => github.com/svenstaro/trac0r
      */
-    unsigned long prng[17];
+    uint64_t prng[17];
     for(int i = 0; i < 16; i++)
-      prng[i] = (unsigned long)rand() << 32 | (unsigned long)rand();
+      prng[i] = (uint64_t)rand() << 32 | (uint64_t)rand();
     prng[16] = 0;
 
     /** Buffers **/
-    RemoteBuffer /*float */ data_mem = env.allocate(17 * sizeof(float));
-    RemoteBuffer /*float */ surf_mem =
-        env.allocate(surf_count * triangle_size * sizeof(float));
-    RemoteBuffer /*float */ lamp_mem =
-        env.allocate(lamp_count * triangle_size * sizeof(float));
-    RemoteBuffer /*char4 */ frame_c_mem =
-        env.allocate(size_h * size_w * sizeof(uint32_t));
-    RemoteBuffer /*float4*/ frame_f_mem =
-        env.allocate(size_h * size_w * 4 * sizeof(float));
-    RemoteBuffer /*float */ samples_mem = env.allocate(sizeof(float));
-    RemoteBuffer /*PRNG  */ prng_mem =
-        env.allocate(17 * sizeof(unsigned long), prng);
+    RemoteBuffer camera_mem = env.allocate(17 * sizeof(float));
+    RemoteBuffer info_mem = env.allocate(TODO);
+    auto per_triangle = triangle_size * sizeof(float);
+    RemoteBuffer surf_mem = env.allocate(surf_count * per_triangle);
+    RemoteBuffer lamp_mem = env.allocate(lamp_count * per_triangle);
+    auto image_pixels = size_h * size_w;
+    RemoteBuffer frame_c_mem = env.allocate(image_pixels * sizeof(uint32_t));
+    RemoteBuffer frame_f_mem = env.allocate(image_pixels * 4 * sizeof(float));
+    RemoteBuffer prng_mem = env.allocate(17 * sizeof(uint64_t), prng);
 
-    /** Prepare Kernel **/
+    /** Prepare Kernels **/
     path_tracer.make(env);
-    path_tracer.set_argument(0, data_mem);
+    /*path_tracer.set_argument(0, data_mem);
     path_tracer.set_argument(1, surf_mem);
     path_tracer.set_argument(2, lamp_mem);
     path_tracer.set_argument(3, frame_c_mem);
     path_tracer.set_argument(4, frame_f_mem);
     path_tracer.set_argument(5, samples_mem);
-    path_tracer.set_argument(6, prng_mem);
+    path_tracer.set_argument(6, prng_mem);*/
 
     /** Camera **/
     Camera c;
