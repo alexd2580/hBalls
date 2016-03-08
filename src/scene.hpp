@@ -5,33 +5,11 @@
 #include <cstdint>
 #include <stack>
 
-/** PRIMITIVE TYPE **/
-#define TRIANGLE ((uint8_t)1)
-#define SPHERE ((uint8_t)2)
-
 /** SURFACE TYPE **/
 #define DIFFUSE ((uint8_t)1)
 #define METALLIC ((uint8_t)2)
 #define MIRROR ((uint8_t)3)
 #define GLASS ((uint8_t)4)
-
-/**
-## HEADER ##
-type            :: Uint8
-material        :: Uint8
-__padding__     :: Uint16
-roughness       :: Float
--- 0 -> mirror-like; 1 -> diffuse;
-luminescence    :: Float
--- values can (and for lamps they should) be greater than 1
-color           :: Float3
-
-## BODY ##
-payload     :: Data
-
-sizeof(Sphere) = (6+4) * 4 byte
-sizeof(Triengle) = (6+9) * 4 byte
-**/
 
 struct Material
 {
@@ -39,11 +17,13 @@ struct Material
            float roughness,
            float luminescence,
            glm::vec3 const& color);
-  uint8_t const type;
+  uint8_t type;
   float const roughness;
   float const luminescence;
   glm::vec3 const color;
 };
+
+#define PRIM_SIZE 18 // floats
 
 struct Camera
 {
@@ -60,12 +40,22 @@ struct Camera
  */
 struct ObjectsBuffer
 {
-  float* buffer;
+  ObjectsBuffer(float* b, unsigned int m) : buffer(b), max_count(m)
+  {
+    surf_float_index = 0;
+    lamp_float_index = max_count;
+    surf_count = 0;
+    lamp_count = 0;
+  }
+
+  float* const buffer;
+  unsigned int const max_count;
   unsigned int surf_float_index;
   unsigned int lamp_float_index;
   unsigned int surf_count;
   unsigned int lamp_count;
 };
+
 /**
  * Used to define the scene in a
  */
@@ -84,22 +74,16 @@ private:
 
   void push_vec3(glm::vec3 const& v, unsigned int const& index);
   void push_vertex(glm::vec3 const& v, unsigned int const& index);
-  unsigned int push_header(uint8_t const type, Material const& material);
 
 public:
-  Scene(uint32_t primitive_size);
-  ~Scene(void);
+  Scene(ObjectsBuffer& obuf);
+  virtual ~Scene(void) {}
 
   /**
    * Drop the current scene definition.
    * Reinitializes the octree with its current aabb
    */
   void clear_buffers(void); // clears the scene
-
-  /**
-   * Returns the relevant data for addressing the objects buffer.
-   */
-  ObjectsBuffer const& get_objects(void) const;
 
   void pop_matrix(void);
   void push_matrix(void);
@@ -122,8 +106,6 @@ public:
                 glm::vec3 const& a,
                 glm::vec3 const& b,
                 glm::vec3 const& c);
-
-  void sphere(Material const& material, glm::vec3 const& pos, float r);
 
   void quad(Material const& material,
             glm::vec3 const& a,

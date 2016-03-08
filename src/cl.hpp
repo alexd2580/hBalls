@@ -119,25 +119,29 @@ public:
                     cl::CommandQueue const& queue) const;
 };
 
-#define print_platform_info(platform, param)                                   \
-  _print_platform_info(platform, param, #param)
-void _print_platform_info(cl::Platform const& platform,
-                          cl_platform_info const param,
-                          std::string const param_name);
+#define print_platform_info_(platform, param)                                  \
+  print_platform_info(platform, param, #param)
+void print_platform_info(cl::Platform const& platform,
+                         cl_platform_info const param,
+                         std::string const param_name);
 
-#define list_devices(devices, platform, type)                                  \
-  _list_devices(devices, platform, type, #type)
-void _list_devices(std::vector<cl::Device>& devices,
-                   cl::Platform const& platform,
-                   cl_device_type const type,
-                   std::string const type_name);
+void list_devices(std::vector<cl::Device>& devices,
+                  cl::Platform const& platform,
+                  cl_device_type const type);
 
-#define print_device_info(device, param, type)                                 \
-  _print_device_info<type>(device, param, #param)
+#define print_device_info_(device, param, type)                                \
+  print_device_info<type>(device, param, #param)
 template <typename T>
-void _print_device_info(cl::Device const& device,
-                        cl_device_info const param,
-                        std::string const param_name);
+void print_device_info(cl::Device const& device,
+                       cl_device_info const param,
+                       std::string const param_name);
+
+#define get_device_info_(device, param, type)                                  \
+  get_device_info<type>(device, param, #param)
+template <typename T>
+T get_device_info(cl::Device const& dev,
+                  cl_device_info const param,
+                  std::string const param_name);
 
 /**
  * Blocks until the given event has been completed.

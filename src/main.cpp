@@ -110,12 +110,21 @@ int main(void)
 {
   cout << "[Main] Entry." << endl;
 
-  /** SDL **/
-  unsigned int const size_w = 10;
-  unsigned int const size_h = 10;
-  uint32_t* frame_buffer =
-      (uint32_t*)alloca(size_w * size_h * sizeof(uint32_t));
+  unsigned int const size_w = 100;
+  unsigned int const size_h = 100;
 
+  uint32_t* frame_buffer = new uint32_t[size_w * size_h];
+  size_t const max_primitives = 1000;
+  float* primitive_buffer = new float[max_primitives * PRIM_SIZE];
+  ObjectsBuffer obuf(primitive_buffer, max_primitives);
+
+  if(frame_buffer == nullptr || primitive_buffer == nullptr)
+  {
+    cerr << "[Main] Coundn't allocate local buffers" << endl;
+    return 1;
+  }
+
+  /** SDL **/
   if(SDL::init(size_w, size_h) != 0)
   {
     cerr << "[Main] SDL initialization failed." << endl;
@@ -125,7 +134,7 @@ int main(void)
   try
   {
     /** OpenCL **/
-    Environment env(0, CL_DEVICE_TYPE_ALL);
+    Environment env(1, CL_DEVICE_TYPE_ALL);
 
     /** Kernel **/
     string tracer("./cl/ray_frag.cl");
@@ -133,8 +142,8 @@ int main(void)
     OpenCL::Kernel path_tracer(tracer, tracer_main);
 
     /** Scene **/
-    size_t const primitive_size = 500 * 16;
-    Scene scene(primitive_size);
+    Scene scene(obuf);
+
     create_scene(scene);
 
     /**
@@ -147,11 +156,36 @@ int main(void)
       prng[i] = (unsigned long)rand() << 32 | (unsigned long)rand();
     prng[16] = 0;
 
+    unsigned int max_bounces = 3;
+    unsigned int float_size = 4; // byte. as defined in specification
+    unsigned int global_float_ptr_size =
+        get_device_info_(env.m_devices[0], CL_DEVICE_ADDRESS_BITS, cl_uint) / 8;
+
+    /**
+    * Total size for bdpt_buffer in bytes.
+    * float3 has to be aligned to float4 =/
+    */
+    size_t aux_bytes_per_pixel = global_float_ptr_size // size of a float ptr
+                                 + 4 * float_size; // size of bounce position
+
+    cout << "[Main] Size of aux pixel unit: " << aux_bytes_per_pixel << " byte"
+         << endl;
+
+    size_t bdpt_byte = max_bounces       // how many bounces
+                       * size_w * size_h // per pixel (per id)
+                       * 2               // from eye and from lamp
+                       * aux_bytes_per_pixel;
+
+    size_t bdpt_kib = bdpt_byte / 1024;
+    size_t bdpt_printed = bdpt_kib >= 1024 ? bdpt_kib / 1024 : bdpt_kib;
+    string unit = bdpt_kib >= 1024 ? " MiB" : " KiB";
+    cout << "[Main] Size of aux buffer: " << bdpt_printed << unit << endl;
+
     /** Buffers **/
     RemoteBuffer /*float */ data_mem = env.allocate(19 * sizeof(float));
     RemoteBuffer /*float */ objects_mem =
-        env.allocate(primitive_size * sizeof(float));
-    RemoteBuffer /*float */ octree_mem = env.allocate(1);
+        env.allocate(max_primitives * PRIM_SIZE * sizeof(float));
+    RemoteBuffer /*float */ octree_mem = env.allocate(bdpt_byte);
     RemoteBuffer /*char4 */ frame_c_mem =
         env.allocate(size_h * size_w * sizeof(uint32_t));
     RemoteBuffer /*float4*/ frame_f_mem =
@@ -170,6 +204,8 @@ int main(void)
     path_tracer.set_argument(5, samples_mem);
     path_tracer.set_argument(6, prng_mem);
 
+    cout << "[Main] PathTracer compiled" << endl;
+
     /** Camera **/
     Camera c;
     c.pos = glm::vec3(-0.3f, 1.2f, 0.0f);
@@ -187,9 +223,8 @@ int main(void)
     cl::CommandQueue queue = env.create_queue();
 
     /** Push data to remote buffers **/
-    ObjectsBuffer const& obj = scene.get_objects();
-    push_camera(queue, c, size_w, size_h, obj, data_mem);
-    push_data(queue, obj, objects_mem);
+    push_camera(queue, c, size_w, size_h, obuf, data_mem);
+    push_data(queue, obuf, objects_mem);
 
     float samples = 0.0f;
     while(!SDL::die)
@@ -199,6 +234,7 @@ int main(void)
       writeBufferBlocking(queue, samples_mem, &samples);
       /** RUN KERNEL **/
       path_tracer.enqueue(size_w, size_h, queue);
+
       queue.finish();
       /** Read result from char-framebuffer **/
       readBufferBlocking(queue, frame_c_mem, frame_buffer);
@@ -213,289 +249,10 @@ int main(void)
     e.print();
   }
 
+  delete[] frame_buffer;
+  delete[] primitive_buffer;
+
   SDL::close();
   cout << "[Main] Exit." << endl;
   return 0;
 }
-
-/*
-renderWalls();
-colori(200);
-materiali(MIRROR);
-
-
-set_mode(SPHERE);
-spheref(0.0f,0.0f,0.0f,50.0f);*/
-
-/*materiali(MATT);
-renderFloor();
-materiali(MIRROR);
-
-begin(POLYGON);
-    vertexf(100.0f, 0.0f, 100.0f);
-    vertexf(-100.0f, 0.0f, 100.0f);
-    vertexf(-100.0f, 100.0f, 100.0f);
-    vertexf(100.0f, 100.0f, 100.0f);
-end();
-
-begin(POLYGON);
-    vertexf(-100.0f, 0.0f, 100.0f);
-    vertexf(-100.0f, 0.0f, -100.0f);
-    vertexf(-100.0f, 100.0f, -100.0f);
-    vertexf(-100.0f, 100.0f, 100.0f);
-end();
-
-begin(POLYGON);
-    vertexf(100.0f, 0.0f, -100.0f);
-    vertexf(100.0f, 0.0f, 100.0f);
-    vertexf(100.0f, 100.0f, 100.0f);
-    vertexf(100.0f, 100.0f, -100.0f);
-end();
-
-begin(POLYGON);
-    vertexf(-100.0f, 100.0f, 100.0f);
-    vertexf(-100.0f, 100.0f, -100.0f);
-    vertexf(100.0f, 100.0f, -100.0f);
-    vertexf(100.0f, 100.0f, 100.0f);
-end();*/
-
-/*
-    colori(200);
-    materiali(MIRROR);
-
-    push_matrix();
-    rotatef(-F_PI/3.0f, 0.0f, 1.0f, 0.0f);
-
-    glm::vec3 a(-20.0, 0.0, 0.0);
-    glm::vec3 b(20.0, 0.0, 0.0);
-    glm::vec3 c(0.0, 0.0, -10.0*sqrt(12.0));
-    glm::vec3 d(0.0, 0.0, 0.0);
-    glm::vec3 x = a + b + c;
-
-    x /= 3.0;
-    d.x = x.x;
-    d.z = x.z;
-
-    //set center to x|y=20;
-    translatef(-x.x, 20.0f, -x.z);
-
-    x -= a;
-    float h = glm::length(x);
-    h = (float)sqrt((2.0f*20.0f)*(2.0f*20.0f) - h*h);
-    d.y = h;
-
-    begin(SPHERE);
-        vertexv(a);
-        floatf(20.0f);
-    end();
-
-    begin(SPHERE);
-        vertexv(b);
-        floatf(20.0f);
-    end();
-
-    begin(SPHERE);
-        vertexv(c);
-        floatf(20.0f);
-    end();
-
-    begin(SPHERE);
-        vertexv(d);
-        floatf(20.0f);
-    end();
-    pop_matrix();*/
-
-/*
-    void qube(float size)
-    {
-        float s = size/2.0f;
-        set_mode(QUAD);
-            //BACK
-        vertexf(s, s, -s);
-        vertexf(s, -s, -s);
-        vertexf(-s, -s, -s);
-        vertexf(-s, s, -s);
-        //FRONT
-        vertexf(s, s, s);
-        vertexf(-s, s, s);
-        vertexf(-s, -s, s);
-        vertexf(s, -s, s);
-        //TOP
-        vertexf(s, s, s);
-        vertexf(s, s, -s);
-        vertexf(-s, s, -s);
-        vertexf(-s, s, s);
-        //BOTTOM
-        vertexf(s, -s, s);
-        vertexf(-s, -s, s);
-        vertexf(-s, -s, -s);
-        vertexf(s, -s, -s);
-        //LEFT
-        vertexf(-s, s, s);
-        vertexf(-s, s, -s);
-        vertexf(-s, -s, -s);
-        vertexf(-s, -s, s);
-        //RIGHT
-        vertexf(s, s, s);
-        vertexf(s, -s, s);
-        vertexf(s, -s, -s);
-        vertexf(s, s, -s);
-    }
-
-    void renderFloor(void)
-    {
-        for(int i=-10; i<10; i++)
-        {
-            for(int j=-10+(i+110)%2; j<10; j+=2)
-            {
-                push_matrix();
-                translatef(float(i)*10.0f, 0.0f, float(j)*10.0f);
-                set_mode(QUAD);
-                vertexf(0.0f, 0.0f, 0.0f);
-                vertexf(0.0f, 0.0f, 10.0f);
-                vertexf(10.0f, 0.0f, 10.0f);
-                vertexf(10.0f, 0.0f, 0.0f);
-                pop_matrix();
-            }
-        }
-    }
-
-    void renderWall(void)
-    {
-      set_mode(QUAD);
-      vertexf(-100.0f, 200.0f, 0.0f);
-      vertexf(-100.0f, 0.0f, 0.0f);
-      vertexf(100.0f, 0.0f, 0.0f);
-      vertexf(100.0f, 200.0f, 0.0f);
-    }
-
-    void renderWalls(void)
-    {
-      push_matrix();
-      translatef(0.0, 0.0, -95.0);
-      rotatef(0.0, 0.0, 1.0, 0.0);
-      renderWall();
-      pop_matrix();
-      push_matrix();
-      translatef(-95.0, 0.0, 0.0);
-      rotatef(F_PI/2.0f, 0.0f, 1.0f, 0.0f);
-      renderWall();
-      pop_matrix();
-      push_matrix();
-      translatef(0.0, 0.0, 95.0);
-      rotatef(F_PI, 0.0f, 1.0f, 0.0f);
-      renderWall();
-      pop_matrix();
-      push_matrix();
-      translatef(95.0, 0.0, 0.0);
-      rotatef(-F_PI/2.0f, 0.0f, 1.0f, 0.0f);
-      renderWall();
-      pop_matrix();
-    }
-
-
-    int main2(void)
-    {
-        string kernel("./cl/ray_frag.cl");
-        string image("png/out.png");
-
-        //setup(800, 600, "./ray_marcher.cl");
-        //setup(4096, 4096);
-        OpenCL ocl;
-        setup(1000, 1000, kernel, ocl);
-        printInfo();
-        cout << "Defining scene" << endl;
-*/
-/*
-fov should be an array of floats:
-fovy, aspect,
-posx, posy, posz,
-dirx, diry, dirz,
-upx, upy, upz,
-*/
-/*
-        float cam_pos[] = {
-            75.0f, 75.0f, 75.0f,
-            -1.0f, 0.0f, 0.0f,
-            0.0f, 1.0f, 0.0f
-            };
-
-        setPerspective(F_PI/2.0f, cam_pos);
-        //rotatef(-PIE/5.0f, 0.0f, 1.0f, 0.0f);
-
-        cout << "Start..." << endl;
-        cout << "Queueing models" << endl;
-
-        colori(200);
-        materiali(MATT);
-        renderFloor();
-
-        colori(200);
-        materiali(METALLIC);
-        set_mode(QUAD);
-        vertexf(-100.0f, 0.0f, -100.0f);
-        vertexf(100.0f, 0.0f, -100.0f);
-        vertexf(100.0f, 100.0f, -100.0f);
-        vertexf(-100.0f, 100.0f, -100.0f);
-
-        vertexf(100.0f, 0.0f, 100.0f);
-        vertexf(-100.0f, 0.0f, 100.0f);
-        vertexf(-100.0f, 100.0f, 100.0f);
-        vertexf(100.0f, 100.0f, 100.0f);
-
-        vertexf(-100.0f, 0.0f, 100.0f);
-        vertexf(-100.0f, 0.0f, -100.0f);
-        vertexf(-100.0f, 100.0f, -100.0f);
-        vertexf(-100.0f, 100.0f, 100.0f);
-
-        vertexf(100.0f, 0.0f, -100.0f);
-        vertexf(100.0f, 0.0f, 100.0f);
-        vertexf(100.0f, 100.0f, 100.0f);
-        vertexf(100.0f, 100.0f, -100.0f);
-
-        vertexf(-100.0f, 100.0f, 100.0f);
-        vertexf(-100.0f, 100.0f, -100.0f);
-        vertexf(100.0f, 100.0f, -100.0f);
-        vertexf(100.0f, 100.0f, 100.0f);
-
-        colori(200);
-        materiali(MIRROR);
-
-        push_matrix();
-        rotatef(-F_PI/3.0f, 0.0f, 1.0f, 0.0f);
-
-        glm::vec3 a(-20.0, 0.0, 0.0);
-        glm::vec3 b(20.0, 0.0, 0.0);
-        glm::vec3 c(0.0, 0.0, -10.0*sqrt(12.0));
-        glm::vec3 d(0.0, 0.0, 0.0);
-        glm::vec3 x = a + b + c;
-
-        x /= 3.0;
-        d.x = x.x;
-        d.z = x.z;
-
-        //set center to x|y=20;
-        translatef(-x.x, 20.0f, -x.z);
-
-        x -= a;
-        float h = glm::length(x);
-        h = (float)sqrt((2.0f*20.0f)*(2.0f*20.0f) - h*h);
-        d.y = h;
-
-        set_mode(SPHERE);
-        spherev(a, 20);
-        spherev(b, 20);
-        spherev(c, 20);
-        spherev(d, 20);
-
-        pop_matrix();
-
-        cout << "Rendering" << endl;
-
-        printScreen(image, ocl);
-
-        cout << "Closing" << endl;
-
-        return 0;
-    }
-*/

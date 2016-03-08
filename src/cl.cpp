@@ -111,7 +111,8 @@ OpenCLException::OpenCLException(cl_int err, string& msg)
 void OpenCLException::print(void)
 {
   cerr << "[OpenCL] Error " << translate_cl_error(error) << " := " << error
-       << ": " << message << endl;
+       << endl
+       << "\t" << message << endl;
 }
 
 /******************************************************************************/
@@ -129,16 +130,24 @@ Environment::Environment(unsigned int platform_num, cl_device_type dev_type)
     throw OpenCLException(error, msg);
   }
 
+  int int_i = 0;
   for(auto i = platforms.begin(); i != platforms.end(); i++)
   {
-    cout << "[OpenCL] Platform:" << endl;
-    print_platform_info(*i, CL_PLATFORM_VERSION);
-    print_platform_info(*i, CL_PLATFORM_NAME);
-    print_platform_info(*i, CL_PLATFORM_VENDOR);
-    print_platform_info(*i, CL_PLATFORM_EXTENSIONS);
+    cout << "[OpenCL] Platform " << int_i << ":" << endl;
+    print_platform_info_(*i, CL_PLATFORM_VERSION);
+    print_platform_info_(*i, CL_PLATFORM_NAME);
+    print_platform_info_(*i, CL_PLATFORM_VENDOR);
+    print_platform_info_(*i, CL_PLATFORM_EXTENSIONS);
+    int_i++;
   }
 
   // SELECT CPU VS GPU HERE!!!!
+  if(platform_num >= platforms.size())
+  {
+    string msg("Invalid platform number: " + std::to_string(platform_num));
+    throw OpenCLException(0, msg);
+  }
+
   m_platform = platforms[platform_num];
   list_devices(m_devices, m_platform, dev_type);
 
@@ -376,9 +385,9 @@ cl::Event Kernel::enqueue(size_t const width,
 /******************************************************************************/
 /******************************************************************************/
 
-void _print_platform_info(cl::Platform const& platform,
-                          cl_platform_info const param,
-                          string const param_name)
+void print_platform_info(cl::Platform const& platform,
+                         cl_platform_info const param,
+                         string const param_name)
 {
   string val;
   error = platform.getInfo(param, &val);
@@ -391,45 +400,55 @@ void _print_platform_info(cl::Platform const& platform,
   cout << "[OpenCL] " << param_name << "=\t" << val << endl;
 }
 
-void _list_devices(vector<cl::Device>& devices,
-                   cl::Platform const& platform,
-                   cl_device_type const type,
-                   std::string const type_name)
+void list_devices(vector<cl::Device>& devices,
+                  cl::Platform const& platform,
+                  cl_device_type const type)
 {
-  cout << "[OpenCL] Listing devices of type " << type_name << "." << endl;
+  cout << "[OpenCL] Listing devices of type " << type << "." << endl;
+  // TODO reverse lookup
 
   error = platform.getDevices(type, &devices);
   if(error != CL_SUCCESS)
   {
-    string msg("Could not get devices of type (" + type_name + ").");
+    string msg("Could not get devices of type (" + std::string("TODO") + ").");
     throw OpenCLException(error, msg);
   }
 
   for(auto i = devices.begin(); i != devices.end(); i++)
   {
     cout << "[OpenCL] Device:" << endl;
-    print_device_info(*i, CL_DEVICE_NAME, string);
-    print_device_info(*i, CL_DEVICE_VENDOR, string);
-    print_device_info(*i, CL_DEVICE_VERSION, string);
-    print_device_info(*i, CL_DRIVER_VERSION, string);
-    print_device_info(*i, CL_DEVICE_OPENCL_C_VERSION, string);
-    print_device_info(*i, CL_DEVICE_AVAILABLE, cl_bool);
-    print_device_info(*i, CL_DEVICE_COMPILER_AVAILABLE, cl_bool);
-    print_device_info(*i, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_bool);
-    print_device_info(*i, CL_DEVICE_GLOBAL_MEM_SIZE, cl_ulong);
-    print_device_info(*i, CL_DEVICE_MAX_CLOCK_FREQUENCY, cl_uint);
-    print_device_info(*i, CL_DEVICE_MAX_COMPUTE_UNITS, cl_uint);
-    print_device_info(*i, CL_DEVICE_MAX_CONSTANT_ARGS, cl_uint);
-    print_device_info(*i, CL_DEVICE_MAX_WORK_GROUP_SIZE, size_t);
-    print_device_info(*i, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, cl_uint);
+    print_device_info_(*i, CL_DEVICE_NAME, string);
+    print_device_info_(*i, CL_DEVICE_VENDOR, string);
+    print_device_info_(*i, CL_DEVICE_VERSION, string);
+    print_device_info_(*i, CL_DRIVER_VERSION, string);
+    print_device_info_(*i, CL_DEVICE_OPENCL_C_VERSION, string);
+    print_device_info_(*i, CL_DEVICE_AVAILABLE, cl_bool);
+    print_device_info_(*i, CL_DEVICE_COMPILER_AVAILABLE, cl_bool);
+    print_device_info_(*i, CL_DEVICE_ERROR_CORRECTION_SUPPORT, cl_bool);
+    print_device_info_(*i, CL_DEVICE_GLOBAL_MEM_SIZE, cl_ulong);
+    print_device_info_(*i, CL_DEVICE_ADDRESS_BITS, cl_uint);
+    print_device_info_(*i, CL_DEVICE_MAX_CLOCK_FREQUENCY, cl_uint);
+    print_device_info_(*i, CL_DEVICE_MAX_COMPUTE_UNITS, cl_uint);
+    print_device_info_(*i, CL_DEVICE_MAX_CONSTANT_ARGS, cl_uint);
+    print_device_info_(*i, CL_DEVICE_MAX_WORK_GROUP_SIZE, size_t);
+    print_device_info_(*i, CL_DEVICE_MAX_WORK_ITEM_DIMENSIONS, cl_uint);
   }
   cout << endl;
 }
 
 template <typename T>
-void _print_device_info(cl::Device const& device,
-                        cl_device_info const param,
-                        std::string const param_name)
+void print_device_info(cl::Device const& device,
+                       cl_device_info const param,
+                       string const param_name)
+{
+  T res = get_device_info<T>(device, param, param_name);
+  cout << "[OpenCL] " << param_name << " =\t" << res << endl;
+}
+
+template <typename T>
+T get_device_info(cl::Device const& device,
+                  cl_device_info const param,
+                  string const param_name)
 {
   T res;
   error = device.getInfo<T>(param, &res);
@@ -438,8 +457,7 @@ void _print_device_info(cl::Device const& device,
     string msg("Could not get parameter " + param_name + ".");
     throw OpenCLException(error, msg);
   }
-
-  cout << "[OpenCL] " << param_name << " =\t" << res << endl;
+  return res;
 }
 
 void waitForEvent(cl_event& e)

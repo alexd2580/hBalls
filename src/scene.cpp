@@ -84,18 +84,7 @@ struct interleave_ // TODO what is this?
   float color;
 };
 
-Scene::Scene(uint32_t primitive_size)
-{
-  buf.buffer = new float[primitive_size];
-  buf.surf_float_index = 0;
-  buf.lamp_float_index = primitive_size;
-  buf.surf_count = 0;
-  buf.lamp_count = 0;
-
-  push_matrix();
-}
-
-Scene::~Scene(void) { delete[] buf.buffer; }
+Scene::Scene(ObjectsBuffer& objbuf) : buf(objbuf) { push_matrix(); }
 
 void Scene::clear_buffers(void)
 {
@@ -103,11 +92,6 @@ void Scene::clear_buffers(void)
   buf.lamp_float_index = 0;
   buf.surf_count = 0;
   buf.lamp_count = 0;
-}
-
-__attribute__((const)) ObjectsBuffer const& Scene::get_objects(void) const
-{
-  return buf;
 }
 
 void Scene::rotate(float angle, float x, float y, float z)
@@ -147,35 +131,6 @@ void Scene::push_vertex(glm::vec3 const& v, unsigned int const& index)
   push_vec3(res, index);
 }
 
-#define HEADER_SIZE 6
-
-unsigned int Scene::push_header(uint8_t const type, Material const& material)
-{
-  unsigned int index;
-  unsigned int const obj_size = HEADER_SIZE + 9; // max
-  if(material.luminescence > 0.00001f)           // lamp
-  {
-    buf.lamp_float_index -= obj_size;
-    buf.lamp_count++;
-    index = buf.lamp_float_index;
-  }
-  else
-  {
-    index = buf.surf_float_index;
-    buf.surf_float_index += obj_size;
-    buf.surf_count++;
-  }
-
-  uint8_t* buf_u = (uint8_t*)(buf.buffer + index);
-  buf_u[0] = type;
-  buf_u[1] = material.type;
-  buf.buffer[index + 1] = material.roughness;
-  buf.buffer[index + 2] = material.luminescence;
-  push_vec3(material.color, index + 3);
-
-  return index + 6;
-}
-
 __attribute__((const)) float min3(float a, float b, float c)
 {
   return min(a, min(b, c));
@@ -192,20 +147,32 @@ void Scene::triangle(Material const& material,
 {
   glm::vec3 lower, upper;
 
-  unsigned int index = push_header(TRIANGLE, material);
-  push_vertex(a, index + 0);
-  push_vertex(b, index + 3);
-  push_vertex(c, index + 6);
-}
+  unsigned int index;
+  if(material.luminescence > 0.0001f) // lamp
+  {
+    buf.lamp_float_index -= PRIM_SIZE;
+    buf.lamp_count++;
+    index = buf.lamp_float_index;
+  }
+  else
+  {
+    index = buf.surf_float_index;
+    buf.surf_float_index += PRIM_SIZE;
+    buf.surf_count++;
+  }
 
-void Scene::sphere(Material const& material, glm::vec3 const& pos, float radius)
-{
-  glm::vec3 const lower(pos - glm::vec3(radius));
-  glm::vec3 const upper(pos + glm::vec3(radius));
+  uint8_t* buf_u = (uint8_t*)(buf.buffer + index);
+  buf_u[0] = material.type;
+  buf.buffer[index + 1] = material.roughness;
+  buf.buffer[index + 2] = material.luminescence;
+  push_vec3(material.color, index + 3);
 
-  unsigned int index = push_header(SPHERE, material);
-  push_vertex(pos, index);
-  buf.buffer[index + 3] = radius;
+  push_vertex(a, index + 6);
+  push_vertex(b, index + 9);
+  push_vertex(c, index + 12);
+
+  glm::vec3 norm = glm::cross(b - a, c - a);
+  push_vertex(norm, index + 15);
 }
 
 void Scene::quad(Material const& material,
